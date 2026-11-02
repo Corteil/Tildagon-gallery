@@ -28,10 +28,9 @@ Holding a direction repeats it.
 The badge cannot draw very large pictures, so there are two ways to get small
 ones, which can be combined:
 
-* **On the badge**, with the `imgtool` native module in the firmware
-  ([firmware/imgtool](firmware/imgtool)): thumbnails are made as you browse, and
-  a picture over `MAX_PIXELS` is shrunk into a `.view` copy when you open it.
-  Needs a custom firmware build.
+* **On the badge**, with the `imgtool` library ([natmod](natmod)): copy two files
+  to `/lib` (no firmware change). Thumbnails are made as you browse, and a
+  picture over `MAX_PIXELS` is shrunk into a `.view` copy when you open it.
 * **On a PC**, no firmware changes: `python tools/prepare.py ~/Photos /path/to/sdcard/Pictures`
   (needs Pillow) shrinks the pictures, turns them the right way up and writes
   the thumbnails to `.thumbs/`. It also handles GIF/BMP/WebP/TIFF.
@@ -50,7 +49,7 @@ mosaic shows coloured tiles with the first letter of the name.
 | `layouts.py` | mosaic layouts (3x3 and 4x4 grids so far) |
 | `scanner.py`, `imginfo.py`, `thumbs.py` | finding pictures, reading sizes from headers, making thumbnails |
 | `tools/prepare.py` | the PC tool |
-| `firmware/imgtool` | the optional native module |
+| `natmod/` | the optional `imgtool` library (Python + native code) |
 
 ## Planned
 

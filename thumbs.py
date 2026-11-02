@@ -1,6 +1,7 @@
-"""Thumbnails and shrunk copies made on the badge, when the native `imgtool`
-module is in the firmware (firmware/imgtool). Without it everything here does
-nothing and `available` is False: use tools/prepare.py on a PC instead.
+"""Thumbnails and shrunk copies made on the badge, when the `imgtool` library
+(natmod/: imgtool.py and _imgtool.mpy in /lib) is installed. Without it
+everything here does nothing and `available` is False: use tools/prepare.py on
+a PC instead.
 
     thumbs.make(path)   makes .thumbs/<name>.png next to the picture
     thumbs.shrunk(path) makes .view/<name>.jpg and returns its path
@@ -9,7 +10,7 @@ import os
 
 try:
     import imgtool
-except ImportError:
+except ImportError:  # not installed, or the native part doesn't fit this firmware
     imgtool = None
 
 available = imgtool is not None

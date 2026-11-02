@@ -1,0 +1,5 @@
+libs/
+build/
+build-*/
+/_imgtool.mpy
+test/imgcli

@@ -1,19 +1,14 @@
 /* imgcore: decode a JPEG or PNG, shrink it, encode the result.
  *
- * Plain C interface to a C++ core (JPEGDEC, PNGdec, JPEGENC by Larry Bank).
- * It knows nothing about MicroPython: file access comes in through the imgio
- * struct and the encoded file goes out as a buffer. No exceptions cross this
- * boundary, so the MicroPython binding can raise freely around it.
+ * Plain C, built on JPEGDEC, PNGdec and JPEGENC by Larry Bank. It knows nothing
+ * about MicroPython: file access comes in through the imgio struct and the
+ * encoded file goes out as a buffer.
  */
 #ifndef IMGCORE_H
 #define IMGCORE_H
 
 #include <stddef.h>
 #include <stdint.h>
-
-#ifdef __cplusplus
-extern "C" {
-#endif
 
 typedef struct {
     void *ctx;
@@ -43,9 +38,6 @@ typedef struct {
     int src_width, src_height; /* size of the picture that was read */
 } imgout_t;
 
-/* Pixel memory (and the output buffer) is taken from PSRAM when there is
- * any; the decoder state from fast internal RAM. Both hooks can be replaced
- * at build time: see imgcore.cpp. */
 int img_make(const imgio_t *in, int mode, int size, int quality, imgout_t *out);
 void img_free(void *p);
 
@@ -53,7 +45,10 @@ void img_free(void *p);
  * before any EXIF rotation. */
 int img_info(const imgio_t *in, int *width, int *height);
 
-#ifdef __cplusplus
-}
-#endif
+/* Supplied by whoever links this in: where memory comes from. The MicroPython
+ * module uses the MicroPython heap (which is PSRAM on the badge); the PC tests
+ * use malloc. img_alloc may raise instead of returning NULL. */
+void *img_alloc(size_t n);
+void img_release(void *p);
+
 #endif

@@ -17,7 +17,7 @@ im.save(d + "/big.jpg", quality=90); im.resize((800, 600)).save(d + "/p.png")
 open(d + "/bad.bin", "wb").write(b"not an image" * 20)
 PY
 convert "$d/p.png" -interlace PNG "$d/il.png"
-"$1" "$here/mp_test.py" "$d"
+MICROPYPATH="${MPYLIB:-$here/..}:" "$1" ${MPHEAP:+-X heapsize=$MPHEAP} "$here/mp_test.py" "$d"
 python3 - "$d" <<'PY'
 import sys
 from PIL import Image
