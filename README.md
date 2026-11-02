@@ -41,6 +41,33 @@ ones, which can be combined:
 Without either, pictures still show if they are under `MAX_PIXELS`, and the
 mosaic shows coloured tiles with the first letter of the name.
 
+## Testing on a Raspberry Pi and the badges
+
+On the Pi (or any Debian/Ubuntu PC):
+
+```sh
+git clone https://github.com/Corteil/Tildagon-gallery && cd Tildagon-gallery
+git checkout initial-gallery-app
+natmod/test/pi_setup.sh     # installs mpremote + Pillow, builds the C core, runs the PC tests
+```
+
+Then plug a badge in over USB (log out and in once if the script added you to
+`dialout`) and:
+
+```sh
+python3 tools/badge.py test                  # copy the app to /apps/gallery and run the self-test
+python3 tools/badge.py test --photo /sdcard/Pictures/some.jpg   # also time a real picture
+python3 tools/badge.py info                  # MicroPython version, mpy number, free memory
+python3 tools/badge.py ports                 # list badges when more than one is plugged in
+python3 tools/badge.py test --port /dev/ttyACM1
+```
+
+The self-test (`tools/selftest.py`) makes its own pictures, checks thumbnails,
+resizing, error handling and memory use, and prints `SELFTEST PASSED` or
+`FAILED` with timings. Run it on each badge; the 2024 and 2026 badges may need
+different `_imgtool.mpy` builds if their MicroPython differs (`info` shows
+the `mpy` number: the prebuilt file is for 11014). Please send me the output.
+
 ## Layout of the repo
 
 | | |
@@ -50,6 +77,7 @@ mosaic shows coloured tiles with the first letter of the name.
 | `layouts.py` | mosaic layouts (3x3 and 4x4 grids so far) |
 | `scanner.py`, `imginfo.py`, `thumbs.py` | finding pictures, reading sizes from headers, making thumbnails |
 | `tools/prepare.py` | the PC tool |
+| `tools/badge.py`, `tools/selftest.py` | deploy to a badge and run the on-badge self-test |
 | `imgtool.py`, `_imgtool.mpy` | on-badge resizing (Python + prebuilt native code); source and tests in `natmod/` |
 
 ## Planned
