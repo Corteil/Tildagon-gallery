@@ -3,3 +3,4 @@ build/
 build-*/
 /_imgtool.mpy
 test/imgcli
+.mpy_ld_cache*/
