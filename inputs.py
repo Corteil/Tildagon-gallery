@@ -34,6 +34,11 @@ def _has(kind, button):
         return kind == button
 
 
+def _add(names, name):
+    if name not in names:
+        names.append(name)
+
+
 class Inputs:
     """Input for both the 2024 and 2026 badges.
 
@@ -89,20 +94,23 @@ class Inputs:
                 self._touched.discard(int(name[5:]) - 1)
 
     def keys(self, delta=0):
-        names = set(self._queue)  # a set, so one press can't count twice
+        names = []  # in the order pressed, each once, so frames behave the same every run
+        for n in self._queue:
+            if n not in names:
+                names.append(n)
         self._queue = []
         b = self._buttons
         for name in KEYS:
             t = BUTTON_TYPES[name]
             if b.pressed(t):
-                names.add(name)
+                _add(names, name)
                 self._held[name] = 0
             elif name in ARROWS:
                 if b.get(t):
                     h = self._held.get(name, 0) + delta
                     if h >= HOLD_MS:
                         h -= REPEAT_MS
-                        names.add(name)
+                        _add(names, name)
                     self._held[name] = h
                 else:
                     self._held[name] = 0
@@ -110,12 +118,12 @@ class Inputs:
             for key, name in KEYBOARD_EXTRA:
                 t = KEYBOARD_BUTTONS.get(key)
                 if t is not None and b.pressed(t):
-                    names.add(name)
+                    _add(names, name)
             for ch in LETTERS:
                 t = KEYBOARD_BUTTONS.get(ch.upper())
                 if t is not None and b.pressed(t):
-                    names.add(ch)
-        return list(names)
+                    _add(names, ch)
+        return names
 
     def touch_position(self):
         if not self._touched:
