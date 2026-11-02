@@ -5,6 +5,7 @@ from .inputs import Inputs, PADS
 from .touch_scroll import TouchScroller
 from . import imginfo
 from . import scanner
+from . import thumbs
 
 ROOT = "/sdcard/Pictures"  # the SD card mounts at /sdcard; change to suit
 LAYOUT = 0                 # index into LAYOUTS
@@ -39,11 +40,15 @@ class GalleryApp(app.App):
         self._shown = None     # picture the viewer has measured
         self._rect = None      # where to draw it
         self._note = None      # lines to show instead, if it can't be drawn
+        self._wait = False     # too big: a shrunk copy is being made
+        self._small = None     # (picture, its shrunk copy or None), once tried
+        self._draw_path = None # what the viewer actually draws
 
     # ---- input -------------------------------------------------------
     def update(self, delta):
         self.inputs.bind()  # no-op unless we were unbound on minimise
         n = len(self.files)
+        self._background()
 
         steps = self.scroller.update(self.inputs.touch_position())
         if steps and n:
@@ -77,6 +82,30 @@ class GalleryApp(app.App):
                     self.sel = (self.sel + 1) % n
                 elif key in ("LEFT", "UP"):
                     self.sel = (self.sel - 1) % n
+
+    def _background(self):
+        """Work done between frames, one job per frame so the screen keeps
+        moving: shrink the picture being viewed, or make a missing thumbnail.
+        Only does anything when the native imgtool module is present."""
+        if not thumbs.available or not self.files:
+            return
+        if self.state == "view":
+            if self._wait:  # the viewer put up "Resizing" last frame
+                self._wait = False
+                path = self.files[self.sel]
+                self._small = (path, thumbs.shrunk(path))
+                self._shown = None  # measure again, now with the small copy
+            return
+        if self._page != self.sel // self.layout.per_page:
+            return  # not drawn yet: nothing to look at
+        order = [self.sel % self.layout.per_page] + list(range(len(self._tiles)))
+        for i in order:
+            if i < len(self._tiles):
+                path, thumb = self._tiles[i]
+                if thumb is None and not thumbs.failed(path):
+                    if thumbs.make(path):
+                        self._tiles[i] = (path, scanner.thumb_path(path))
+                    return
 
     def _jump(self, ch):
         """Select the next image (after the current one, wrapping) whose
@@ -146,24 +175,44 @@ class GalleryApp(app.App):
 
     def _measure(self, path):
         """Work out how to show a picture before decoding it: where it goes,
-        or why it can't be shown."""
+        or why it can't be shown. A picture over MAX_PIXELS is replaced by a
+        shrunk copy when imgtool is there to make one."""
         self._shown = path
         self._rect = None
         self._note = None
+        self._draw_path = path
+        tried = None
+        if self._small and self._small[0] == path:
+            tried = self._small          # _background() has just had a go
+        self._small = None
         size = imginfo.size(path)
         if size is None:
             self._note = ("Can't read", path.rsplit("/", 1)[-1])
-        elif MAX_PIXELS and size[0] * size[1] > MAX_PIXELS:
+            return
+        if MAX_PIXELS and size[0] * size[1] > MAX_PIXELS:
+            small = None
+            if thumbs.available:
+                small = tried[1] if tried else thumbs.shrunk(path, build=False)
+            if small:
+                small_size = imginfo.size(small)
+                if small_size and small_size[0] * small_size[1] <= MAX_PIXELS:
+                    self._draw_path = small
+                    self._rect = _fit(small_size[0], small_size[1])
+                    return
+            elif thumbs.available and not tried and not thumbs.failed(path):
+                self._note = ("Resizing...",)  # _background() does it next frame
+                self._wait = True
+                return
             self._note = ("Too big", "%d x %d" % size, "limit %d px" % MAX_PIXELS)
-        else:
-            self._rect = _fit(size[0], size[1])
+            return
+        self._rect = _fit(size[0], size[1])
 
     def _draw_view(self, ctx):
         path = self.files[self.sel]
         if path != self._shown:
             self._measure(path)
         if self._rect:
-            ctx.image(path, *self._rect)
+            ctx.image(self._draw_path, *self._rect)
         else:
             self._message(ctx, *self._note)
 
