@@ -1,0 +1,14 @@
+[app]
+name = "Gallery"
+category = "Media"
+menu = "Apps"
+
+[entry]
+class = "GalleryApp"
+
+[metadata]
+author = "Corteil"
+license = "MIT"
+url = "https://github.com/Corteil/Tildagon-gallery"
+description = "Image gallery: mosaic browser, full-screen viewer and touch-ring scrolling for pictures on external storage."
+version = 1
