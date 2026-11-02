@@ -18,20 +18,12 @@ def list_images(root):
     return out
 
 
-def thumb_path(path, size):
-    """Where the size x size thumbnail for an image is cached: a hidden
-    .thumbs folder next to it. The name comes from the file's name, size and
-    modified time, so a replaced picture gets a new thumbnail."""
+def thumb_path(path):
+    """Where an image's thumbnail is: a PNG in a hidden .thumbs folder next
+    to it, named after the picture (pic.jpg -> .thumbs/pic.jpg.png). The
+    tools/prepare.py script on a PC makes them."""
     d, _, name = path.rpartition("/")
-    try:
-        st = os.stat(path)
-        key = "%s|%d|%d" % (name, st[6], st[8])
-    except OSError:
-        key = name
-    h = 5381
-    for c in key:
-        h = (h * 33 + ord(c)) & 0xFFFFFF
-    return "%s/.thumbs/%06x_%d.png" % (d, h, size)
+    return "%s/.thumbs/%s.png" % (d, name)
 
 
 def exists(path):
