@@ -20,3 +20,7 @@ CFLAGS += -fno-tree-loop-distribute-patterns -DNO_SIMD -DPNG_MAX_BUFFERED_PIXELS
 LINK_RUNTIME = 1
 
 include $(MPY_DIR)/py/dynruntime.mk
+
+# make install: put the result where the app loads it from (the app's own folder)
+install: $(MOD).mpy
+	cp $(MOD).mpy ..

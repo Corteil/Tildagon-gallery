@@ -1,10 +1,11 @@
 """imgtool: shrink JPEG and PNG pictures and make thumbnails, fast.
 
-A small MicroPython library: this file plus _imgtool.mpy, a native module that
-does the pixel work (JPEGDEC, PNGdec and JPEGENC by Larry Bank). Copy both to
-/lib on the badge; no firmware change is needed.
+Part of the gallery app: this file plus _imgtool.mpy, a native module that does
+the pixel work (JPEGDEC, PNGdec and JPEGENC by Larry Bank). Both live in the
+app's own folder on the badge, so nothing is installed anywhere else and no
+firmware change is needed.
 
-    import imgtool
+    from . import imgtool
     imgtool.size("/sdcard/Pictures/a.jpg")                   # (4000, 3000)
     imgtool.thumbnail("a.jpg", "a.png", 80)                  # centre-cropped square PNG
     imgtool.resize("a.jpg", "a_small.jpg", 480, quality=85)  # longest side 480, JPEG
@@ -16,7 +17,10 @@ or 16-bit PNG, some rare JPEGs), MemoryError, or OSError (file trouble).
 """
 import os
 
-import _imgtool
+try:
+    from . import _imgtool  # inside the app's folder
+except (ImportError, ValueError):
+    import _imgtool  # run on its own (the PC tests)
 
 _THUMB_PNG = 0
 _FIT_JPEG = 1

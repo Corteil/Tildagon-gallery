@@ -26,7 +26,7 @@ class ImgToolStandIn(types.ModuleType):
 
 
 imgtool = ImgToolStandIn("imgtool")
-sys.modules["imgtool"] = imgtool
+sys.modules["gallery.imgtool"] = imgtool  # what `from . import imgtool` finds
 
 
 def mod(name, **attrs):

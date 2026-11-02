@@ -1,6 +1,8 @@
-# imgtool: fast thumbnails and resizing on the badge, no firmware change
+# imgtool: fast thumbnails and resizing, inside the app
 
-A MicroPython library made of two files that you copy to the badge's `/lib`:
+Everything runs from the gallery app's own folder on the badge. Nothing goes
+in `/lib`, and the firmware is not touched. Two files in the app folder do the
+work:
 
 * `imgtool.py`: the Python half (opens files, writes results)
 * `_imgtool.mpy`: a **native module**: C code compiled to machine code and loaded
@@ -10,34 +12,39 @@ A MicroPython library made of two files that you copy to the badge's `/lib`:
   [JPEGENC](https://github.com/bitbank2/JPEGENC) (Apache 2.0).
 
 ```python
-import imgtool
+from . import imgtool            # from inside the app
 imgtool.size("/sdcard/Pictures/a.jpg")                    # (4000, 3000)
 imgtool.thumbnail("a.jpg", "a.png", 80)                   # centre-cropped square PNG
 imgtool.resize("a.jpg", "a_small.jpg", 480, quality=85)   # longest side 480, JPEG
 ```
 
 Errors: `ValueError` (not a readable JPEG/PNG), `NotImplementedError` (interlaced
-or 16-bit PNG, some rare JPEGs), `MemoryError`, `OSError`. The gallery app's
-`thumbs.py` uses it when present and copes with all four.
+or 16-bit PNG, some rare JPEGs), `MemoryError`, `OSError`. The app's
+`thumbs.py` uses it when it loads and copes with all four; if `_imgtool.mpy`
+doesn't suit the firmware, the app carries on without it.
 
 ## Installing
 
-1. Check the prebuilt file fits your firmware (see `prebuilt/README.md`): the
-   REPL must print `11014` for `import sys; print(sys.implementation._mpy)`.
-2. Copy `imgtool.py` and `prebuilt/_imgtool.mpy` to `/lib` on the badge.
-3. `import imgtool` in the REPL. If that works, the gallery app picks it up.
+Install the gallery app as usual: `_imgtool.mpy` is in the app folder already
+(the repo root). Check it suits your firmware (below); if it doesn't, build one
+and `make install` puts it in the app folder.
 
-### If the prebuilt file does not fit, build it
+The prebuilt `_imgtool.mpy` is for MicroPython 1.28.0 (commit e0e9fbb, what
+badge-2024-software pins), mpy format 6.3, xtensawin. A native module is tied to
+the exact MicroPython it was built against, so on the badge run
+`import sys; print(sys.implementation._mpy, sys.implementation.version)`: you
+want `11014 (1, 28, 0, '')`.
 
-A native module links against the firmware's internal function table, so it
-must be built from the **same MicroPython source as your firmware** (for
+### If it does not fit, build it
+
+It must be built from the **same MicroPython source as your firmware** (for
 badge-2024-software: its `micropython` submodule). You need the ESP32
 cross-compiler (`xtensa-esp-elf-gcc`, from ESP-IDF or Espressif's crosstool-NG
 releases) and Python packages `pyelftools` and `ar`.
 
 ```sh
 ./fetch_libs.sh                      # the three bitbank2 libraries, at tested versions
-make ARCH=xtensawin MPY_DIR=/path/to/micropython     # makes _imgtool.mpy
+make ARCH=xtensawin MPY_DIR=/path/to/micropython install   # builds, copies to the app folder
 ```
 
 MicroPython's makefile looks for `xtensa-esp32-elf-gcc`; Espressif's newer
@@ -79,7 +86,7 @@ the loader and the Python callbacks:
 cd /path/to/micropython/ports/unix && make FROZEN_MANIFEST= MICROPY_PY_BTREE=0 MICROPY_PY_FFI=0 MICROPY_PY_SSL=0
 cd /path/to/Tildagon-gallery/natmod
 make ARCH=x64 MPY_DIR=/path/to/micropython BUILD=build-x64
-mkdir /tmp/lib && cp _imgtool.mpy imgtool.py /tmp/lib
+mkdir /tmp/lib && cp _imgtool.mpy ../imgtool.py /tmp/lib
 MPHEAP=3M MPYLIB=/tmp/lib test/run_mp.sh /path/to/micropython/ports/unix/build-standard/micropython
 ```
 
