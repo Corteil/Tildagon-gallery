@@ -34,7 +34,7 @@ class GalleryApp(app.App):
             else:
                 self.sel = (self.sel + steps) % n
 
-        for key in self.inputs.keys():
+        for key in self.inputs.keys(delta):
             if key == "CANCEL":
                 if self.state == "view":
                     self.state = "browse"
@@ -44,6 +44,10 @@ class GalleryApp(app.App):
                     return
             elif not n:
                 continue
+            elif len(key) == 1:  # a letter on a USB keyboard
+                self._jump(key)
+            elif key in ("NEXT", "PREV"):
+                self.sel = (self.sel + (1 if key == "NEXT" else -1)) % n
             elif self.state == "browse":
                 if key == "CONFIRM":
                     self.state = "view"
@@ -55,6 +59,16 @@ class GalleryApp(app.App):
                     self.sel = (self.sel + 1) % n
                 elif key in ("LEFT", "UP"):
                     self.sel = (self.sel - 1) % n
+
+    def _jump(self, ch):
+        """Select the next image (after the current one, wrapping) whose
+        file name starts with the typed letter."""
+        n = len(self.files)
+        for i in range(1, n + 1):
+            j = (self.sel + i) % n
+            if self.files[j].rsplit("/", 1)[-1].lower().startswith(ch):
+                self.sel = j
+                return
 
     # ---- drawing -----------------------------------------------------
     def draw(self, ctx):

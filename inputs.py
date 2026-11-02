@@ -12,9 +12,19 @@ try:
     from frontboards.twentysix import TOUCH
 except ImportError:
     TOUCH = {}
+try:
+    from events.keyboard import KEYBOARD_BUTTONS
+except ImportError:
+    KEYBOARD_BUTTONS = {}
 
 PADS = 12  # touch pads in the 2026 ring, TOUCH01..TOUCH12, clockwise
 KEYS = ("UP", "DOWN", "LEFT", "RIGHT", "CONFIRM", "CANCEL")
+ARROWS = ("UP", "DOWN", "LEFT", "RIGHT")  # these repeat while held
+HOLD_MS = 400    # held this long before repeating starts
+REPEAT_MS = 70   # then one repeat per this many ms
+# USB keyboard keys beyond arrows/Enter/Escape (those arrive as the six keys)
+KEYBOARD_EXTRA = (("SPACE", "NEXT"), ("BACKSPACE", "PREV"))
+LETTERS = "abcdefghijklmnopqrstuvwxyz"
 
 
 def _has(kind, button):
@@ -29,9 +39,13 @@ class Inputs:
 
     owner             the App. Button events only reach the focused app, so
                       handlers are registered against it, not a stand-in.
-    keys()            names pressed since the last call, any of KEYS. The
-                      2026 joystick maps onto the same names (SELECT is
-                      CONFIRM) and a press seen twice only counts once.
+    keys(delta)       names pressed since the last call (delta = ms since the
+                      last call, drives hold-to-repeat). Any of:
+                        KEYS                  UP DOWN LEFT RIGHT CONFIRM CANCEL
+                        "NEXT" / "PREV"       USB keyboard Space / Backspace
+                        "a".."z"              a letter typed on a USB keyboard
+                      The 2026 joystick maps onto KEYS (SELECT is CONFIRM) and
+                      a press seen twice only counts once.
     touch_position()  finger position on the 2026 touch ring as 0..12 (pad
                       numbers, clockwise), or None when untouched or when
                       the badge has no touch pads.
@@ -42,6 +56,7 @@ class Inputs:
         self._buttons = Buttons(owner)
         self._touched = set()
         self._queue = []
+        self._held = {}
         self._bound = False
         self.bind()
 
@@ -73,12 +88,33 @@ class Inputs:
             if _has(TOUCH[name], event.button):
                 self._touched.discard(int(name[5:]) - 1)
 
-    def keys(self):
+    def keys(self, delta=0):
         names = set(self._queue)  # a set, so one press can't count twice
         self._queue = []
+        b = self._buttons
         for name in KEYS:
-            if self._buttons.pressed(BUTTON_TYPES[name]):
+            t = BUTTON_TYPES[name]
+            if b.pressed(t):
                 names.add(name)
+                self._held[name] = 0
+            elif name in ARROWS:
+                if b.get(t):
+                    h = self._held.get(name, 0) + delta
+                    if h >= HOLD_MS:
+                        h -= REPEAT_MS
+                        names.add(name)
+                    self._held[name] = h
+                else:
+                    self._held[name] = 0
+        if KEYBOARD_BUTTONS:
+            for key, name in KEYBOARD_EXTRA:
+                t = KEYBOARD_BUTTONS.get(key)
+                if t is not None and b.pressed(t):
+                    names.add(name)
+            for ch in LETTERS:
+                t = KEYBOARD_BUTTONS.get(ch.upper())
+                if t is not None and b.pressed(t):
+                    names.add(ch)
         return list(names)
 
     def touch_position(self):
