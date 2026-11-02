@@ -51,7 +51,8 @@ def main():
         dest = ":/apps/%s/selftest.py" % a.name
         mp(a.port, "fs", "cp", os.path.join(HERE, "selftest.py"), dest)
         arg = repr(a.photo) if a.photo else "None"
-        code = ("import sys;sys.path.insert(0,'/apps');"
+        # system.scheduler must load first: importing the badge OS eventbus directly is circular
+        code = ("import sys;sys.path.insert(0,'/apps');import system.scheduler;"
                 "m=__import__('%s.selftest',None,None,['run']);m.run(%s)" % (a.name, arg))
         r = subprocess.run(["mpremote"] + (["connect", a.port] if a.port else []) + ["exec", code],
                            capture_output=True, text=True)

@@ -47,6 +47,13 @@ releases) and Python packages `pyelftools` and `ar`.
 make ARCH=xtensawin MPY_DIR=/path/to/micropython install   # builds, copies to the app folder
 ```
 
+The Makefile and `mpy_ld_wrap.py` work around four problems you hit with Espressif's
+current toolchain and MicroPython 1.28's `mpy_ld.py` (each cost a failed module on
+a real badge, so don't remove them): the compiler defaults to a big-endian core
+(`-mdynconfig=xtensa_esp32s3.so` fixes it), `mpy_ld` mixes up same-named sections
+from different object files, read-only data must be 4-byte aligned, and
+`&table[N]` pointers lose their offset. See the comments in those files.
+
 MicroPython's makefile looks for `xtensa-esp32-elf-gcc`; Espressif's newer
 toolchains call it `xtensa-esp-elf-gcc`, so make symlinks of the old names
 (`xtensa-esp32-elf-gcc` -> `xtensa-esp-elf-gcc`, and the same for `ld`, `ar`,
@@ -92,7 +99,7 @@ MPHEAP=3M MPYLIB=/tmp/lib test/run_mp.sh /path/to/micropython/ports/unix/build-s
 
 ## Known limits
 
-* **Not run on a badge yet.** The ESP32-S3 `_imgtool.mpy` builds, and the same
+* **Run on two badges** (`python3 tools/badge.py test`, both SELFTEST PASSED). Earlier note, now out of date: **Not run on a badge yet.** The ESP32-S3 `_imgtool.mpy` builds, and the same
   source passes every test as an x64 module on a PC, but nobody has loaded the
   Xtensa one on real hardware. Possible trouble: native code must fit in the
   firmware's executable RAM (it is 47 KB of code and 37 KB of read-only data),

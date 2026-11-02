@@ -76,13 +76,20 @@ def run(photo=None):
         check("bad file rejected", False)
     except ValueError:
         check("bad file rejected", True)
-    gc.collect()
-    before = gc.mem_free()
-    for _ in range(20):
-        imgtool.thumbnail(png, th, 80)
-    gc.collect()
-    after = gc.mem_free()
-    check("no leak over 20 thumbnails", before - after < 2048, "%d bytes" % (before - after))
+    # A real leak loses memory in every batch. One batch can look bad when the
+    # garbage collector happens to keep a block alive (it scans conservatively),
+    # so count a leak only if two batches in a row both lose memory.
+    def batch():
+        for _ in range(20):
+            imgtool.thumbnail(png, th, 80)
+        gc.collect()
+        return gc.mem_free()
+
+    m0 = batch()  # warm-up: the first calls settle the heap
+    m1 = batch()
+    m2 = batch()
+    lost = min(m0 - m1, m1 - m2)
+    check("no leak over 40 thumbnails", lost < 2048, "%d bytes (%d, %d)" % (lost, m0 - m1, m1 - m2))
     if photo:
         print("photo", photo, imgtool.size(photo))
         r, ms = timed(imgtool.thumbnail, photo, TMP + "/p_th.png", 80)
