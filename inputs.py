@@ -1,7 +1,7 @@
 from math import pi, sin, cos, atan2
 
 from system.eventbus import eventbus
-from events.input import ButtonDownEvent, ButtonUpEvent, BUTTON_TYPES
+from events.input import Buttons, BUTTON_TYPES, ButtonDownEvent, ButtonUpEvent
 
 # 2026 front board extras. Missing on the 2024 badge, so optional.
 try:
@@ -25,43 +25,45 @@ def _has(kind, button):
 
 
 class Inputs:
-    """Collects badge input events for both the 2024 and 2026 badges.
+    """Input for both the 2024 and 2026 badges.
 
-    keys()            names pressed since last call, any of KEYS. The 2026
-                      joystick maps onto the same names (SELECT = CONFIRM).
+    owner             the App. Button events only reach the focused app, so
+                      handlers are registered against it, not a stand-in.
+    keys()            names pressed since the last call, any of KEYS. The
+                      2026 joystick maps onto the same names (SELECT is
+                      CONFIRM) and a press seen twice only counts once.
     touch_position()  finger position on the 2026 touch ring as 0..12 (pad
                       numbers, clockwise), or None when untouched or when
                       the badge has no touch pads.
     """
 
-    def __init__(self):
+    def __init__(self, owner):
+        self._owner = owner
+        self._buttons = Buttons(owner)
         self._touched = set()
         self._queue = []
         self._bound = False
         self.bind()
 
     def bind(self):
-        if not self._bound:
-            eventbus.on(ButtonDownEvent, self._down, self)
-            eventbus.on(ButtonUpEvent, self._up, self)
+        # The six standard keys come from Buttons. Events are only needed
+        # for the 2026 joystick and touch ring.
+        if not self._bound and (JOYSTICK_BUTTON_TYPES or TOUCH):
+            eventbus.on(ButtonDownEvent, self._down, self._owner)
+            eventbus.on(ButtonUpEvent, self._up, self._owner)
             self._bound = True
 
     def unbind(self):
         if self._bound:
-            eventbus.remove(ButtonDownEvent, self._down, None)
-            eventbus.remove(ButtonUpEvent, self._up, None)
+            eventbus.remove(ButtonDownEvent, self._down, self._owner)
+            eventbus.remove(ButtonUpEvent, self._up, self._owner)
             self._bound = False
-            self._touched.clear()
+        self._touched.clear()
 
     def _down(self, event):
-        names = set()  # a set, so one press can't count twice
-        for name in KEYS:
-            if name in BUTTON_TYPES and _has(BUTTON_TYPES[name], event.button):
-                names.add(name)
         for name in JOYSTICK_BUTTON_TYPES:
             if _has(JOYSTICK_BUTTON_TYPES[name], event.button):
-                names.add("CONFIRM" if name == "SELECT" else name)
-        self._queue.extend(names)
+                self._queue.append("CONFIRM" if name == "SELECT" else name)
         for name in TOUCH:
             if _has(TOUCH[name], event.button):
                 self._touched.add(int(name[5:]) - 1)
@@ -72,9 +74,12 @@ class Inputs:
                 self._touched.discard(int(name[5:]) - 1)
 
     def keys(self):
-        q = self._queue
+        names = set(self._queue)  # a set, so one press can't count twice
         self._queue = []
-        return q
+        for name in KEYS:
+            if self._buttons.pressed(BUTTON_TYPES[name]):
+                names.add(name)
+        return list(names)
 
     def touch_position(self):
         if not self._touched:

@@ -1,4 +1,4 @@
-from app import App
+import app
 
 from .layouts import LAYOUTS
 from .inputs import Inputs, PADS
@@ -10,9 +10,10 @@ LAYOUT = 0             # index into LAYOUTS
 TOUCH_STEP = 1.0       # pads of finger travel round the ring per image
 
 
-class GalleryApp(App):
-    def __init__(self, config=None):
-        self.inputs = Inputs()
+class GalleryApp(app.App):
+    def __init__(self):
+        super().__init__()
+        self.inputs = Inputs(self)
         self.scroller = TouchScroller(step=TOUCH_STEP, period=PADS)
         self.files = scanner.list_images(ROOT)
         self.layout = LAYOUTS[LAYOUT][1]()
