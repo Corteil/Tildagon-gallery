@@ -94,13 +94,20 @@ class Inputs:
                 self._touched.discard(int(name[5:]) - 1)
 
     def flush(self):
-        """Forget presses and holds seen while the app was busy."""
+        """Forget presses and holds seen while the app was busy.
+
+        Buttons.clear() is not used: it also wipes the latch that stops a key
+        that is still down from counting as a new press, so a held (or bouncing)
+        CONFIRM started the next slow job as soon as the last one ended, forever,
+        and CANCEL presses were lost. Reading each key once uses up a press
+        and keeps the latch."""
         self._queue = []
         self._held = {}
-        try:
-            self._buttons.clear()
-        except AttributeError:
-            pass
+        b = self._buttons
+        for name in KEYS:
+            b.pressed(BUTTON_TYPES[name])
+        for t in KEYBOARD_BUTTONS.values():
+            b.pressed(t)
 
     def keys(self, delta=0):
         names = []  # in the order pressed, each once, so frames behave the same every run

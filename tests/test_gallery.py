@@ -52,25 +52,32 @@ bus = Bus()
 
 
 class Buttons:
-    """pressed() = once per press, get() = currently held."""
+    """Same behaviour as the badge firmware's events.input.Buttons: get() = held now,
+    pressed() = True once per press (latched until the key is let go), clear() wipes
+    both the held state and the latch."""
     def __init__(self, owner):
-        self.p, self.held = [], set()
+        self.buttons, self._already = {}, set()
         bus.on(DownEvent, self._d, owner)
         bus.on(UpEvent, self._u, owner)
     def _d(self, ev):
-        self.p.append(set(ev.button)); self.held |= set(ev.button)
+        for b in ev.button:
+            self.buttons[b] = True
     def _u(self, ev):
-        self.held -= set(ev.button)
-    def pressed(self, t):
-        for s in self.p:
-            if t in s:
-                self.p.remove(s)
-                return True
-        return False
+        for b in ev.button:
+            self.buttons[b] = False
+            self._already.discard(b)   # (the real one does this at the next poll; the tests poll once per press)
     def get(self, t):
-        return t in self.held
+        return any(v for b, v in self.buttons.items() if b == t)
+    def pressed(self, t):
+        down = self.get(t)
+        if down and t not in self._already:
+            self._already.add(t)
+            return True
+        if not down:
+            self._already.discard(t)
+        return False
     def clear(self):
-        self.p, self.held = [], set()
+        self.buttons.clear(); self._already.clear()
 
 
 mod("app", App=FakeApp)
@@ -108,7 +115,7 @@ gstorage.KEPT_ROOT = FLASH + "/gallery"
 gstorage.KEPT = gstorage.KEPT_ROOT + "/kept"
 gstorage.SETTINGS = gstorage.KEPT_ROOT + "/settings.txt"
 gkeep.ORDER = gstorage.KEPT + "/.order"
-O = 4  # four special tiles come first
+O = 0  # no special cells any more: the first cell is a picture (or an album)
 
 
 def make(names, folder=None):
@@ -116,11 +123,21 @@ def make(names, folder=None):
     for n in names:
         open(os.path.join(d, n), "w").close()
     gstorage.current = lambda: d
-    return gapp.GalleryApp()
+    g = gapp.GalleryApp()
+    assert g.state == "home"
+    g.state = "browse"   # most tests start on the picture cells
+    return g
 
 
 a = make(["img%02d.png" % n for n in range(30)])
-assert len(a.files) == 30 and len(a.entries) == 34 and a.sel == O
+assert len(a.files) == 30 and len(a.entries) == 30 and a.sel == O
+
+
+def goto(app, name):
+    """Open a tile of the home carousel."""
+    app.state = "home"
+    app._tile = [n for n, _ in gapp.HOME].index(name)
+    press("confirm", app=app)
 
 
 def press(*names, app=None):
@@ -144,9 +161,9 @@ press("left")
 assert a.sel == O + 5
 a.sel = O
 press("left")
-assert a.sel == 33          # wraps past the special tiles to the last picture
+assert a.sel == 29          # wraps to the last picture
 press("right")
-assert a.sel == O           # and back, skipping them
+assert a.sel == O           # and back round
 press("cancel")
 assert a.state == "browse" and not a.minimised
 
@@ -190,7 +207,7 @@ else:
 # ---- special tiles ----
 c = make(["apple.jpg", "avocado.jpg", "berry.jpg", "cherry.jpg", "Cranberry.png"])
 c.sel = 0
-press("confirm", app=c); assert c.state == "search"
+goto(c, "Search"); assert c.state == "search"
 # on-badge keyboard: DOWN to 'b', RIGHT adds it, LEFT deletes
 press("down", app=c); press("right", app=c)
 assert c._q == "b", c._q
@@ -203,7 +220,7 @@ assert [f.rsplit("/", 1)[-1] for f in c.files] == ["avocado.jpg", "cherry.jpg", 
 assert c.sel == O
 press("cancel", app=c)          # clears the filter, doesn't leave
 assert c.query == "" and len(c.files) == 5 and not c.minimised
-c.sel = 0; press("confirm", app=c)
+goto(c, "Search")
 if KB:
     press("kbA", app=c); press("kbV", app=c)
     assert c._q.endswith("av"), c._q
@@ -219,7 +236,7 @@ card2 = tempfile.mkdtemp()
 for n in ("x1.jpg", "x2.jpg"):
     open(os.path.join(card2, n), "w").close()
 gstorage.choices = lambda: [("SD sdcard", c.folder), ("SD sdcard_1", card2), ("Flash (kept)", gstorage.KEPT)]
-c.sel = 1; press("confirm", app=c)
+goto(c, "Settings"); c._row = c.ROWS.index("Source"); press("confirm", app=c)
 assert c.state == "storage" and len(c._opts) == 3 and c._opt == 0
 press("down", app=c); press("confirm", app=c)
 assert c.state == "browse" and c.folder == card2 and len(c.files) == 2
@@ -260,7 +277,7 @@ fl = make(["z.txt"], folder=gstorage.KEPT)
 assert len(fl.files) == 10
 fl.sel = O; press("confirm", app=fl); assert fl.state == "view"
 press("confirm", app=fl); fl.update(20)
-assert len(fl.files) == 9 and fl.state == "view" and fl.entries[fl.sel] not in gapp.SPECIAL
+assert len(fl.files) == 9 and fl.state == "view" and not fl.entries[fl.sel].startswith("@")
 real_free = gkeep.free
 gkeep.free = lambda: 0
 full = "%s/full.jpg" % big
@@ -289,7 +306,7 @@ show_dir = tempfile.mkdtemp()
 for i in range(6):
     Image.new("RGB", (120, 90), (i * 40, 90, 90)).save("%s/s%d.jpg" % (show_dir, i))
 sh = make([], folder=show_dir)
-sh.sel = 2; press("confirm", app=sh)       # Slideshow tile
+goto(sh, "Slideshow")
 assert sh.state == "show" and sh.entries[sh.sel] == show_dir + "/s0.jpg" and gstage._mounted
 seen = [sh.sel]
 for _ in range(40):                        # 40 frames of 20 ms: the first pictures get staged
@@ -327,23 +344,25 @@ class BadCtx(Ctx):
 sh._shown = None
 bc = BadCtx(); sh.draw(bc)
 assert bc.imgs and bc.imgs[-1].startswith(show_dir) and not gstage.enabled
-press("cancel", app=sh); assert sh.state == "browse" and not gstage._mounted
+press("cancel", app=sh); assert sh.state == "home" and not gstage._mounted
 gstage.enabled = True
 print(tag, "slideshow ok")
 
-# ---- empty storage still shows the tiles ----
+# ---- empty storage: nothing to open, nothing breaks ----
 e = make([], folder=tempfile.mkdtemp())
-assert e.entries == list(gapp.SPECIAL) and e.sel == 0
+assert e.entries == [] and e.sel == 0
 ctx = Ctx(); e.draw(ctx)
-press("down", app=e)
-e.sel = 2; press("confirm", app=e)
-assert e.state == "browse"       # slideshow with nothing to show
+press("down", "confirm", app=e)  # nothing to move to or open
+ctx = Ctx(); e.draw(ctx)
+goto(e, "Slideshow")
+assert e.state == "home"         # slideshow with nothing to show
 print(tag, "empty ok")
 
 # ---- settings tile and the other layouts ----
 import gallery.layouts as glay
 st = make(["p%02d.jpg" % i for i in range(40)])
-st.sel = 3; press("confirm", app=st); assert st.state == "settings"
+goto(st, "Settings"); assert st.state == "settings"
+st._row = st.ROWS.index("Layout")
 assert st.layout_no == 0
 press("right", app=st); assert st.layout_no == 1 and st.layout.per_page == 16
 press("right", app=st); press("right", app=st)
@@ -379,7 +398,50 @@ press("right", app=st); press("right", app=st); assert st.sort == "name"
 press("down", app=st)                          # clear kept
 before = gkeep.count()
 press("confirm", app=st); assert gkeep.count() == 0 and st._toast_text == "Cleared"
-press("cancel", app=st); assert st.state == "browse"
+press("cancel", app=st); assert st.state == "home"
+# ---- a held key doesn't start another slow job when flush() is called after the last one ----
+lk = make(["k%d.jpg" % i for i in range(3)])
+bus.emit(DownEvent({"confirm"}))
+assert lk.inputs.keys(20) == ["CONFIRM"]
+lk.inputs.flush()                                   # what a slow job does when it ends
+for _ in range(5):
+    assert lk.inputs.keys(20) == [], "a key that is still down came back as a new press"
+bus.emit(UpEvent({"confirm"})); assert lk.inputs.keys(20) == []
+bus.emit(DownEvent({"confirm"})); assert lk.inputs.keys(20) == ["CONFIRM"]   # a real new press still counts
+bus.emit(UpEvent({"confirm"}))
+bus.emit(DownEvent({"cancel"})); lk.inputs.flush(); bus.emit(UpEvent({"cancel"}))   # pressed during a job: dropped
+assert lk.inputs.keys(20) == []
+
+# ---- the home carousel ----
+hm = make(["p%02d.jpg" % i for i in range(5)]); hm.state = "home"
+names = [n for n, _ in gapp.HOME]
+assert names == ["Pictures", "Slideshow", "Search", "Settings"] and hm._tile == 0
+press("right", app=hm); assert hm._tile == 1
+press("left", app=hm); press("left", app=hm); assert hm._tile == 3          # wraps
+press("right", app=hm); assert hm._tile == 0
+press("confirm", app=hm); assert hm.state == "browse"                        # Pictures
+press("cancel", app=hm); assert hm.state == "home" and not hm.minimised      # back to the carousel
+goto(hm, "Slideshow"); assert hm.state == "show"
+press("cancel", app=hm); assert hm.state == "home"
+goto(hm, "Search"); assert hm.state == "search"
+press("cancel", app=hm); assert hm.state == "home"
+goto(hm, "Settings"); assert hm.state == "settings" and hm.ROWS[hm._row] == "Source"
+press("cancel", app=hm); assert hm.state == "home"
+press("cancel", app=hm); assert hm.minimised                                 # CANCEL on the carousel leaves
+for i in range(len(names)):
+    hm._tile = i; hm.state = "home"; hm.draw(Ctx())                          # every tile draws
+# an album is a cell, not a tile; a search with no hits leaves an empty cell list that still draws
+hm.state = "browse"; hm.query = "zzz"; hm._apply(); assert hm.entries == [] and hm.files == []
+hm.draw(Ctx()); press("confirm", "up", "right", app=hm)
+# in the honeycomb, CONFIRM swaps a picture into the middle; on the middle one it opens it
+hy = make(["h%02d.jpg" % i for i in range(30)])
+hy.layout_no = 2; hy.layout = glay.LAYOUTS[2][1](); hy._apply(0)
+assert hy.sel == 0 and hy.layout.cells[0] == 0
+press("right", app=hy); assert hy.sel == 1 and hy.state == "browse"
+press("confirm", app=hy); assert hy.state == "browse" and hy.layout.cells[0] == 1 and hy.layout.cells[1] == 0
+press("confirm", app=hy); assert hy.state == "view"                 # it is in the middle now: open it
+press("cancel", app=hy); assert hy.state == "browse" and hy.entries[hy.sel].endswith("h01.jpg")
+hy.draw(Ctx())
 # a new app picks up the saved layout
 gstorage.save(layout=2)
 st2 = make(["p%02d.jpg" % i for i in range(40)])
@@ -429,7 +491,7 @@ press("right", app=hv)
 for _ in range(8):
     hv.draw(Ctx()); hv.update(50)
 assert scr.frames == 2
-press("cancel", app=hv); press("cancel", app=hv)
+press("cancel", app=hv); press("cancel", app=hv); press("cancel", app=hv)   # view, browse, home
 assert not hv.hdmi.active and scr.closed and 3 in FakeDisplay.mirror   # mirror restored
 # no HDMI fitted: say so once, don't keep trying
 FakeDisplay.mirror = set(); FakeDisplay.log = []
@@ -487,15 +549,60 @@ for no, (name, fac) in enumerate(glay.LAYOUTS):
     assert j > 5, (name, j)
     print(tag, "layout", name, "ok")
 
-# honeycomb: the selection is in the middle with two rings round it; round tiles in the ring
+# honeycomb: pictures keep their cells; CONFIRM swaps the highlighted one with the middle one
+import math
 hc = glay.HoneycombLayout()
-tl = hc.tiles(20, 44)
-assert len(tl) == 19 and tl[0][0] == 20 and abs(tl[0][1] + tl[0][3] / 2) < 1 and abs(tl[0][2] + tl[0][4] / 2) < 1, tl[0]
-assert len(hc.tiles(0, 44)) < 19 and all(0 <= i < 44 for i, *_ in hc.tiles(0, 44))
-assert hc.move(20, "DOWN", 44) == 26 and hc.move(20, "UP", 44) == 14 and hc.move(2, "UP", 44) == 2
+hc.reset(44)
+tl = hc.tiles(0, 44)
+assert len(tl) == 19 and tl[0][0] == 0 and tl[0][1] + tl[0][3] / 2 == 0 and tl[0][2] + tl[0][4] / 2 == 0, tl[0]
+assert [i for i, *_ in tl] == list(range(19))                       # the middle one, then the first 18 outer cells
+ctr = [(x + w / 2, y + h / 2) for _, x, y, w, h in tl]
+assert all(abs(math.hypot(*ctr[i]) - math.hypot(*ctr[1])) < 2 for i in range(1, 7))   # ring 1 is round the middle
+assert all(math.hypot(x, y) + 25 <= 120 for x, y in ctr)                               # inside the round screen
+cell = {i: (x, y) for i, x, y, w, h in tl}
+# moving the highlight doesn't move any picture, and never changes the middle one
+sel = 1
+for d in ("RIGHT", "DOWN", "LEFT", "UP", "RIGHT", "RIGHT"):
+    sel = hc.move(sel, d, 44)
+    assert {i: (x, y) for i, x, y, w, h in hc.tiles(sel, 44)} == cell and hc.cells[0] == 0
+assert hc.move(1, "RIGHT", 44) != 1 and hc.move(0, "RIGHT", 44) == 1      # from the middle, RIGHT is the cell on its right
+# CONFIRM swaps the highlighted picture with the middle one; the others stay put
+assert hc.swap(0, 44) is False                                              # on the middle one: the app opens it
+at = {i: (x, y) for i, x, y, w, h in hc.tiles(5, 44)}
+assert hc.swap(5, 44) is True
+now = {i: (x, y) for i, x, y, w, h in hc.tiles(5, 44)}
+assert now[5] == at[0] and now[0] == at[5] and all(now[i] == at[i] for i in range(1, 19) if i != 5)
+assert hc.swap(5, 44) is False                                              # 5 is in the middle now
+# more pictures than cells: moving off the edge scrolls the outer cells a page; the middle stays
+sel = 18
+assert hc.cells[1 + 17] == 18
+for d in ("RIGHT", "DOWN"):
+    hc.page = 0
+    cur = 17
+    for _ in range(60):
+        new = hc.move(cur, d, 44)
+        if new == cur:
+            break
+        cur = new
+        if hc.page:
+            break
+    assert hc.page == 1, (d, cur, hc.page)
+    got = [i for i, *_ in hc.tiles(cur, 44)]
+    assert got[0] == hc.cells[0] and got[1:] == hc.cells[1 + 18:1 + 36], got      # the middle one didn't change
+hc.page = 1
+back = hc.move(hc.cells[1 + 18 + 12], "LEFT", 44)                           # the left-most cell of page 1
+assert hc.page == 0 and back == hc.cells[1 + 12]                            # the same cell on the page before
+assert hc.move(hc.cells[1 + 12], "LEFT", 44) == hc.cells[1 + 12] and hc.page == 0   # nothing before the first page
+last = hc.tiles(hc.cells[-1], 44)                                           # the last page is partly empty
+assert len(last) == 1 + (44 - 1 - 36) and hc.page == 2
+assert hc.tiles(0, 0) == [] and hc.move(0, "RIGHT", 0) == 0
+sm = glay.HoneycombLayout(); sm.reset(5)
+assert sorted(i for i, *_ in sm.tiles(2, 5)) == [0, 1, 2, 3, 4]              # a short list: each picture once
+one = glay.HoneycombLayout(); one.reset(1)
+assert one.move(0, "DOWN", 1) == 0 and one.swap(0, 1) is False
 fr0 = glay.FocusRingLayout()
 assert fr0.shape == "circle"
-ctx = RecCtx(); cf = make(["z%d.jpg" % i for i in range(12)]); cf.layout = fr0; cf.sel = O + 3
+ctx = RecCtx(); cf = make(["z%d.jpg" % i for i in range(12)]); cf.layout = fr0; cf.sel = O + 5   # all eight neighbours exist
 cf.draw(ctx)
 assert ctx.calls.count("arc") >= 9 and ctx.calls.count("clip") == 9, (ctx.calls.count("arc"), ctx.calls.count("clip"))
 
@@ -521,27 +628,27 @@ open(sd + "/holiday/h1.jpg", "w").close(); open(sd + "/holiday/h2.jpg", "w").clo
 os.mkdir(sd + "/holiday/beach"); open(sd + "/holiday/beach/b1.jpg", "w").close()
 assert [d.rsplit("/", 1)[-1] for d in gapp.scanner.list_dirs(sd)] == ["Cats", "holiday"]
 al = make([], folder=sd)
-assert al.entries[:4] == list(gapp.SPECIAL) and al.entries[4:6] == ["@dir:" + sd + "/Cats", "@dir:" + sd + "/holiday"]
-assert al._first == 6 and al.sel == 6 and [f.rsplit("/", 1)[-1] for f in al.files] == ["A.jpg", "b.jpg", "c.jpg"]
-al.sel = 4; press("confirm", app=al)               # open the Cats album
+assert al.entries[:2] == ["@dir:" + sd + "/Cats", "@dir:" + sd + "/holiday"]
+assert al._first == 2 and al.sel == 2 and [f.rsplit("/", 1)[-1] for f in al.files] == ["A.jpg", "b.jpg", "c.jpg"]
+al.sel = 0; press("confirm", app=al)               # open the Cats album
 assert al.folder == sd + "/Cats" and [f.rsplit("/", 1)[-1] for f in al.files] == ["c1.png"] and al.state == "browse"
 press("cancel", app=al)                            # back up, not out of the app
 assert al.folder == sd and al.entries[al.sel] == "@dir:" + sd + "/Cats" and not al.minimised
-al.sel = 5; press("confirm", app=al)               # the holiday album has a sub-album
-assert al.entries[4] == "@dir:" + sd + "/holiday/beach"
-al.sel = 4; press("confirm", app=al); assert al.folder.endswith("/beach")
+al.sel = 1; press("confirm", app=al)               # the holiday album has a sub-album
+assert al.entries[0] == "@dir:" + sd + "/holiday/beach"
+al.sel = 0; press("confirm", app=al); assert al.folder.endswith("/beach")
 press("cancel", app=al); press("cancel", app=al)
 assert al.folder == sd and not al.minimised
 # a search ignores the albums; the slideshow and viewer skip them
 al.query = "c"; al._apply(); assert [e for e in al.entries if e.startswith("@dir")] == []
-al.query = ""; al._apply(); al.sel = 4
+al.query = ""; al._apply(); al.sel = 0
 al.state = "view"; al.sel = al._step(1); assert al.entries[al.sel].endswith("A.jpg")
 al.state = "browse"
-al.sel = 5; al._start_show(); assert al.entries[al.sel].endswith("A.jpg") and al.state == "show"
+al.sel = 1; al._start_show(); assert al.entries[al.sel].endswith("A.jpg") and al.state == "show"
 press("cancel", app=al)
 # the album tile is drawn, in every layout
 for no, (name, fac) in enumerate(glay.LAYOUTS):
-    al.layout = fac(); ctx = RecCtx(); al.sel = 5; al.draw(ctx)
+    al.layout = fac(); ctx = RecCtx(); al.sel = 1; al.draw(ctx)
 al.layout = glay.LAYOUTS[0][1]()
 # sort from the settings screen re-reads the folder
 al.state = "settings"; al._row = al.ROWS.index("Sort")
@@ -567,7 +674,7 @@ assert seen == sw._order                 # in the shuffled order
 for _ in range(12):
     sw.update(20)
 sw.update(sw.seconds * 1000)             # the last one is up: no loop, so it stops
-assert sw.state == "browse" and sw._toast_text == "End of slideshow"
+assert sw.state == "home" and sw._toast_text == "End of slideshow"
 sw.loop = True; sw.shuffle = False; sw.sel = sw._first; sw._start_show()
 assert sw._order == list(range(sw._first, sw._first + 6))
 for k in range(8):                       # loops past the end
@@ -629,6 +736,7 @@ else:
 
 # ---- minimise / resume ----
 a.inputs.flush(); a.state = 'browse'; a.query = ''
+press("cancel"); assert a.state == "home" and not a.minimised
 press("cancel")
 assert a.minimised
 a.update(20)

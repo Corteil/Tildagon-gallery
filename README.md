@@ -5,24 +5,31 @@ Pictures come from the SD card; browse them as a mosaic of thumbnails, open one
 full screen, and step through with the badge buttons, the touch ring (2026), or
 a USB keyboard.
 
-**Status: early. Everything here is tested with stand-ins and on a PC; none of
-it has been run on a real badge yet.** Please try it and tell me what breaks.
+**Status: early. The viewer, thumbnails and resizing run on a real badge (SD hexpansion). The newer parts (the HDMI second screen, the flash keep, slideshow staging and the honeycomb and focus-ring clipping) are only tested with stand-ins on a PC so far.** Please try it and tell me what breaks.
 
 ## Using it
 
 Put pictures in a `Pictures` folder on the SD card (`/sdcard/Pictures`, or
 `/sdcard_1/Pictures` for the Dual uSD hexpansion). JPEG, PNG and GIF (first frame) are
-listed; the badge's picture loader can't draw BMP, so `tools/prepare.py` converts those. Folders inside it are albums (after the four tiles below): CONFIRM opens one, CANCEL goes back up. The first four tiles of the mosaic are not pictures:
+listed; the badge's picture loader can't draw BMP, so `tools/prepare.py` converts those. Folders inside it are albums: CONFIRM opens one, CANCEL goes back up.
 
+The app opens on a carousel of four tiles, like the badge's other apps: LEFT/RIGHT
+move between them (they wrap round), CONFIRM opens one, CANCEL goes back to the
+carousel, and CANCEL on the carousel sends the app to the background.
+
+* **Pictures**: the mosaic of cells (pictures, and albums first). CANCEL clears a search,
+  then goes up out of an album, then back to the carousel.
+* **Slideshow**: starts the slideshow from the first picture.
 * **Search**: type part of a file name (USB keyboard, or on the badge: UP/DOWN
-  picks a letter, RIGHT adds it, LEFT deletes, CONFIRM searches). CANCEL in the
-  mosaic clears the search.
-* **Storage**: choose which card to browse (every `/sdcard*` that is there) or
-  the **Flash** copy (below). The choice is remembered.
-* **Slides**: start the slideshow.
+  picks a letter, RIGHT adds it, LEFT deletes, CONFIRM searches and shows the matches).
 * **Settings** (LEFT/RIGHT change, UP/DOWN pick a row, all remembered):
-  mosaic layout (3x3 grid, 4x4 grid, honeycomb, focus ring; the last two keep
-  the selected picture in the middle), slide timer, slide order (in order or
+  **Source** (CONFIRM: choose which card to browse, every `/sdcard*` that is there, or the
+  **Flash** copy, below),
+  mosaic layout (3x3 grid, 4x4 grid, honeycomb, focus ring). The focus ring keeps
+  the selected picture in the middle. In the honeycomb the pictures keep their cells and
+  the arrows move the highlight; CONFIRM swaps the highlighted picture with the middle
+  cell (CONFIRM on the middle one opens it). With more than 19 pictures, moving off
+  the edge scrolls the outer 18 cells a page; the middle one only changes when you swap, slide timer, slide order (in order or
   shuffled), loop the slideshow or stop at the end, captions (file name and
   size under the picture), **HDMI screen** (see below), the size of copies kept in flash (240, 480 or 720 px),
   sort order (name, newest or oldest first), and "Clear kept" (CONFIRM) which
@@ -41,9 +48,9 @@ the RP2350 side (see the plan in the hexpansion repo).
 | | Browse | Viewer | Slideshow |
 |---|---|---|---|
 | Move | UP / DOWN / LEFT / RIGHT | RIGHT or DOWN next, LEFT or UP previous | LEFT / RIGHT skip |
-| CONFIRM | open / use a tile | keep in flash / take out of flash | pause / play |
+| CONFIRM | open a picture or album | keep in flash / take out of flash | pause / play |
 | UP / DOWN | | | timer 2 to 60 s (remembered) |
-| Back / quit | CANCEL (F) | CANCEL back to the mosaic | CANCEL stops |
+| Back / quit | CANCEL (F) back up, then to the carousel | CANCEL back to the mosaic | CANCEL stops |
 | Touch ring (2026) | slide a finger round it to move through the pictures | same | same |
 | USB keyboard | arrows, Enter, Esc, Space / Backspace for next / previous, a letter jumps to the next name starting with it | same | |
 
@@ -55,7 +62,7 @@ The HDMI hexpansion and an SD hexpansion can't both be fitted, so to use the
 gallery with HDMI the pictures have to be in the badge itself. In the viewer,
 CONFIRM keeps a resized copy (240 px, or 480 or 720 from Settings: the bigger ones are for the HDMI display, the badge's own screen only shows 240) in the badge's flash, in
 `/gallery/kept`; CONFIRM again takes it out. At most **10** are kept: keeping an
-11th drops the oldest. Pick **Flash (kept)** in Storage to browse them (it opens
+11th drops the oldest. Pick **Flash (kept)** under Settings > Source to browse them (it opens
 by itself when there is no card).
 
 ### Slideshow

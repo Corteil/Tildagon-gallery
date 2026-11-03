@@ -22,7 +22,7 @@ Key files: `app.py` (everything stateful), `layouts.py`, `hdmi.py`, `keep.py`,
 `stage.py` (slideshow RAM disk in PSRAM), `thumbs.py`, `imginfo.py`, `scanner.py`,
 `storage.py` (settings in `/gallery/settings.txt`), `imgtool.py` + `_imgtool.mpy`
 (native resize/thumbnail module, xtensawin, MicroPython 1.28.0 / mpy 11014).
-Special tiles start with `@` (`@search`, `@storage`, `@show`, `@settings`, `@dir:<path>`).
+The app opens on a home carousel of four tiles (`HOME` in `app.py`: Pictures, Slideshow, Search, Settings; state `home`). Cells in the picture mosaic are pictures, or albums which start with `@dir:<path>`. The storage picker is under Settings > Source.
 
 ## First thing to do
 

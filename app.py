@@ -20,9 +20,9 @@ TOUCH_STEP = 1.0           # pads of finger travel round the ring per image
 # badge's real limit with `tools/prepare.py --test-ladder`, then raise or
 # lower this. 0 turns the check off.
 MAX_PIXELS = 240 * 240
-SEARCH, STORAGE, SHOW, SETTINGS = "@search", "@storage", "@show", "@settings"
-SPECIAL = (SEARCH, STORAGE, SHOW, SETTINGS)   # the first tiles; not pictures
-SHORT = {SEARCH: "Find", STORAGE: "SD", SHOW: "Show", SETTINGS: "Set"}  # on small tiles
+# The tiles of the home carousel: (name, colour). LEFT/RIGHT move between them, OK opens one.
+HOME = (("Pictures", (0.45, 0.3, 0.7)), ("Slideshow", (0.1, 0.6, 0.3)),
+        ("Search", (0.2, 0.5, 0.9)), ("Settings", (0.55, 0.55, 0.65)))
 CHARS = "abcdefghijklmnopqrstuvwxyz0123456789 -_."   # on-badge search keyboard
 STAGE_AHEAD = 3                      # slideshow pictures kept ready in PSRAM
 SORTS = (("name", "Name"), ("newest", "Newest first"), ("oldest", "Oldest first"))
@@ -30,7 +30,7 @@ SECONDS = (2, 60)                    # slideshow timer range
 
 
 def _special(e):
-    """True for the tiles that aren't pictures (their names start with @)."""
+    """True for the cells that aren't pictures (albums: their names start with @)."""
     return e[0] == "@"
 
 
@@ -77,7 +77,8 @@ class GalleryApp(app.App):
             pass
         self._thumbs = {}      # picture -> its thumbnail path, or None if not made yet
         self._row = 0          # settings screen: selected row
-        self.state = "browse"  # browse, view, search, storage or show
+        self.state = "home"    # home, browse, view, search, settings, storage or show
+        self._tile = 0         # home carousel: selected tile
         self._shown = None     # picture the viewer has measured
         self._rect = None      # where to draw it
         self._note = None      # lines to show instead, if it can't be drawn
@@ -124,21 +125,21 @@ class GalleryApp(app.App):
         return self._thumbs[path]
 
     def _apply(self, sel=None):
-        """Rebuild the tile list: three special tiles, then the pictures that match the search."""
+        """Rebuild the cell list: the albums, then the pictures that match the search."""
         q = self.query.lower()
         self.files = [p for p in self.pics if q in p.rpartition("/")[2].lower()]
         albums = self.albums if not q else []     # a search looks at pictures only
-        self.entries = list(SPECIAL) + albums + self.files
-        self._first = len(SPECIAL) + len(albums)  # where the pictures start
+        self.entries = albums + self.files
+        self._first = len(albums)                 # where the pictures start
         if sel is None:
             sel = self._first if self.files else 0
-        elif self.files and sel < len(SPECIAL):
-            sel = self._first
         self.sel = max(0, min(len(self.entries) - 1, sel))
+        if hasattr(self.layout, "reset"):
+            self.layout.reset(len(self.entries))   # a layout that moves pictures starts again
         self._shown = None
 
     def _step(self, d):
-        """Next picture (d = 1) or previous (d = -1), wrapping, skipping the special tiles."""
+        """Next picture (d = 1) or previous (d = -1), wrapping, skipping the albums."""
         n = len(self.entries)
         j = self.sel
         for _ in range(n):
@@ -159,9 +160,10 @@ class GalleryApp(app.App):
         self._clock(delta)
 
         steps = self.scroller.update(self.inputs.touch_position())
-        if steps and self.state in ("browse", "view", "show"):
+        if steps and self.state in ("browse", "view", "show") and self.entries:
             if self.state == "browse":
-                self.sel = max(0, min(len(self.entries) - 1, self.sel + steps))
+                for _ in range(abs(steps)):
+                    self.sel = self.layout.move(self.sel, "RIGHT" if steps > 0 else "LEFT", len(self.entries))
             elif self.files:
                 for _ in range(abs(steps)):
                     d = 1 if steps > 0 else -1
@@ -183,17 +185,23 @@ class GalleryApp(app.App):
     def _cancel(self):
         if self.state == "show":
             stage.stop()
+            self.state = "home"
+        elif self.state == "view":
             self.state = "browse"
-        elif self.state != "browse":
-            self.state = "browse"
-        elif self.query:
+        elif self.state == "storage":
+            self.state = "settings"
+        elif self.state in ("search", "settings"):
+            self.state = "home"
+        elif self.state == "browse" and self.query:
             self.query = ""
             self._apply()
-        elif self.folder != self.root and self.folder.startswith(self.root):  # up out of an album
+        elif self.state == "browse" and self.folder != self.root and self.folder.startswith(self.root):  # up out of an album
             came_from = "@dir:" + self.folder
             self._open(self.folder.rpartition("/")[0])
             if came_from in self.entries:
                 self.sel = self.entries.index(came_from)
+        elif self.state == "browse":
+            self.state = "home"
         else:
             self.hdmi.stop()
             self.inputs.unbind()
@@ -201,24 +209,34 @@ class GalleryApp(app.App):
             return True
         return False
 
+    def _k_home(self, key):
+        if key in ("RIGHT", "NEXT", "DOWN", "LEFT", "PREV", "UP"):
+            self._tile = (self._tile + (1 if key in ("RIGHT", "NEXT", "DOWN") else -1)) % len(HOME)
+        elif key == "CONFIRM":
+            name = HOME[self._tile][0]
+            if name == "Pictures":
+                self.state = "browse"
+            elif name == "Slideshow":
+                self._start_show()
+            elif name == "Search":
+                self._q = self.query
+                self.state = "search"
+            else:
+                self._row = 0
+                self.state = "settings"
+
     def _k_browse(self, key):
         n = len(self.entries)
+        if not n:
+            return
         if len(key) == 1:  # a letter on a USB keyboard
             self._jump(key)
         elif key in ("NEXT", "PREV"):
             self.sel = (self.sel + (1 if key == "NEXT" else -1)) % n
         elif key == "CONFIRM":
             e = self.entries[self.sel]
-            if e == SEARCH:
-                self._q = self.query
-                self.state = "search"
-            elif e == STORAGE:
-                self._start_storage()
-            elif e == SHOW:
-                self._start_show()
-            elif e == SETTINGS:
-                self._row = 0
-                self.state = "settings"
+            if hasattr(self.layout, "swap") and self.layout.swap(self.sel, n):
+                pass                      # the honeycomb: it went to the middle
             elif e.startswith("@dir:"):
                 self._open(e[5:])
             else:
@@ -277,7 +295,7 @@ class GalleryApp(app.App):
             self._apply()
             self.state = "browse"
 
-    ROWS = ("Layout", "Slide timer", "Slide order", "Loop slideshow", "Captions",
+    ROWS = ("Source", "Layout", "Slide timer", "Slide order", "Loop slideshow", "Captions",
             "HDMI screen", "Kept size", "Sort", "Clear kept")
 
     def _k_settings(self, key):
@@ -321,6 +339,8 @@ class GalleryApp(app.App):
                 storage.save(sort=self.sort)
                 self.pics = scanner.list_images(self.folder, self.sort)
                 self._apply()
+        elif key == "CONFIRM" and self.ROWS[self._row] == "Source":
+            self._start_storage()
         elif key == "CONFIRM" and self.ROWS[self._row] == "Clear kept":
             for p in scanner.list_images(storage.KEPT):
                 keep.remove(p)
@@ -358,7 +378,7 @@ class GalleryApp(app.App):
         if not self.files:
             self._toast("No pictures")
             return
-        if _special(self.entries[self.sel]):
+        if self.sel < self._first:   # an album is selected
             self.sel = self._first
         stage.start()
         self._order = list(range(self._first, len(self.entries)))
@@ -396,7 +416,7 @@ class GalleryApp(app.App):
         if self._since >= self.seconds * 1000:
             if not self.loop and self._order.index(self.sel) == len(self._order) - 1:
                 stage.stop()
-                self.state = "browse"
+                self.state = "home"
                 self._toast("End of slideshow")
                 return
             nxt = self._show_step(self.sel, 1)
@@ -526,7 +546,9 @@ class GalleryApp(app.App):
     def draw(self, ctx):
         ctx.save()
         ctx.rgb(0, 0, 0).rectangle(-120, -120, 240, 240).fill()
-        if self.state == "search":
+        if self.state == "home":
+            self._draw_home(ctx)
+        elif self.state == "search":
             self._draw_search(ctx)
         elif self.state == "storage":
             self._draw_storage(ctx)
@@ -582,33 +604,70 @@ class GalleryApp(app.App):
         if len(self._opts) == 1:
             self._text(ctx, "no SD card found", 0, 85, 11)
 
-    def _special_tile(self, ctx, e, x, y, w, h):
-        if e.startswith("@dir:"):
-            name = e.rsplit("/", 1)[-1]
-            ctx.rgb(0.55, 0.45, 0.1).rectangle(x, y, w, h).fill()
-            if w < 60:
-                self._text(ctx, name[:5], x + w // 2, y + h // 2, 11)
-            else:
-                k = 1 if h < 90 else 1.8
-                self._text(ctx, name[:9], x + w // 2, y + h // 2 - 7 * k, 13 * k)
-                self._text(ctx, "album", x + w // 2, y + h // 2 + 9 * k, 11 * k, rgb=(0.9, 0.9, 0.9))
-            return
-        if e == SEARCH:
-            rgb, label, sub = (0.1, 0.3, 0.6), "Search", self.query[:9] or "name"
-        elif e == STORAGE:
-            rgb, label = (0.5, 0.3, 0.1), "Storage"
-            sub = "Flash" if self.root == storage.KEPT else self.root.split("/")[1][:9]
-        elif e == SHOW:
-            rgb, label, sub = (0.1, 0.45, 0.2), "Slides", "%d s" % self.seconds
+    def _album_cell(self, ctx, e, x, y, w, h):
+        name = e.rsplit("/", 1)[-1]
+        ctx.rgb(0.55, 0.45, 0.1).rectangle(x, y, w, h).fill()
+        if w < 60:
+            self._text(ctx, name[:5], x + w // 2, y + h // 2, 11)
         else:
-            rgb, label, sub = (0.35, 0.35, 0.4), "Settings", LAYOUTS[self.layout_no][0][:9]
-        ctx.rgb(*rgb).rectangle(x, y, w, h).fill()
-        if w < 60:   # a small tile: one short word
-            self._text(ctx, SHORT[e], x + w // 2, y + h // 2, 11)
-            return
-        k = 1 if h < 90 else 1.8   # the big focus tile gets bigger text
-        self._text(ctx, label, x + w // 2, y + h // 2 - 7 * k, 13 * k)
-        self._text(ctx, sub, x + w // 2, y + h // 2 + 9 * k, 11 * k, rgb=(0.85, 0.85, 0.85))
+            k = 1 if h < 90 else 1.8
+            self._text(ctx, name[:9], x + w // 2, y + h // 2 - 7 * k, 13 * k)
+            self._text(ctx, "album", x + w // 2, y + h // 2 + 9 * k, 11 * k, rgb=(0.9, 0.9, 0.9))
+
+    def _home_sub(self, name):
+        """The small line under a home tile's name."""
+        if name == "Pictures":
+            where = "Flash" if self.root == storage.KEPT else self.root.split("/")[1][:9]
+            return "%d in %s" % (len(self.files), where)
+        if name == "Slideshow":
+            return "%d s each" % self.seconds
+        if name == "Search":
+            return self.query[:12] or "by name"
+        return LAYOUTS[self.layout_no][0][:12]
+
+    def _icon(self, ctx, name, rgb):
+        """A big simple icon for a home tile, drawn round (0, -30)."""
+        ctx.rgb(*rgb)
+        ctx.line_width = 6
+        if name == "Pictures":
+            for dx in (-30, 4):
+                for dy in (-64, -30):
+                    ctx.rectangle(dx, dy, 26, 26).fill()
+        elif name == "Slideshow":
+            ctx.begin_path()
+            ctx.move_to(-22, -66)
+            ctx.line_to(30, -30)
+            ctx.line_to(-22, 6)
+            ctx.close_path()
+            ctx.fill()
+        elif name == "Search":
+            ctx.begin_path()
+            ctx.arc(-6, -36, 26, 0, 2 * pi, 0)
+            ctx.stroke()
+            ctx.begin_path()
+            ctx.move_to(13, -17)
+            ctx.line_to(36, 6)
+            ctx.stroke()
+        else:
+            for v, k in ((-56, -14), (-30, 14), (-4, -4)):   # three sliders and their knobs
+                ctx.rectangle(-34, v - 2, 68, 4).fill()
+                ctx.begin_path()
+                ctx.arc(k, v, 8, 0, 2 * pi, 0)
+                ctx.fill()
+
+    def _draw_home(self, ctx):
+        name, rgb = HOME[self._tile]
+        self._icon(ctx, name, rgb)
+        self._text(ctx, name, 0, 36, 24, rgb=rgb)
+        self._text(ctx, self._home_sub(name), 0, 62, 13, rgb=(0.75, 0.75, 0.75))
+        for i in range(len(HOME)):   # one dot per tile
+            c = 1.0 if i == self._tile else 0.35
+            ctx.rgb(c, c, c)
+            ctx.begin_path()
+            ctx.arc(-24 + 16 * i, 88, 4, 0, 2 * pi, 0)
+            ctx.fill()
+        self._text(ctx, "<", -88, -10, 22, rgb=(0.6, 0.6, 0.6))
+        self._text(ctx, ">", 88, -10, 22, rgb=(0.6, 0.6, 0.6))
 
     def _outline(self, ctx, x, y, w, h):
         """Begin the path of a tile's shape: a rectangle, or a hexagon."""
@@ -628,7 +687,7 @@ class GalleryApp(app.App):
 
     def _draw_tile(self, ctx, path, x, y, w, h, big):
         if _special(path):
-            self._special_tile(ctx, path, x, y, w, h)
+            self._album_cell(ctx, path, x, y, w, h)
             return
         pic = self._thumb(path)
         if big:  # the focus tile: the 240 px copy if there is one, it is sharper
@@ -650,7 +709,7 @@ class GalleryApp(app.App):
 
     def _draw_browse(self, ctx):
         n = len(self.entries)
-        for idx, x, y, w, h in self.layout.tiles(self.sel, n):
+        for idx, x, y, w, h in (self.layout.tiles(self.sel, n) if n else ()):
             ctx.save()
             self._outline(ctx, x, y, w, h)
             ctx.clip()
@@ -669,7 +728,9 @@ class GalleryApp(app.App):
 
     def _draw_settings(self, ctx):
         self._text(ctx, "Settings", 0, -88, 16, rgb=(0.8, 0.8, 0.9))
+        where = "Flash" if self.root == storage.KEPT else self.root.split("/")[1][:9]
         vals = {
+            "Source": where + " >",
             "Layout": "< %s >" % LAYOUTS[self.layout_no][0],
             "Slide timer": "< %d s >" % self.seconds,
             "Slide order": "< %s >" % ("Shuffle" if self.shuffle else "In order"),
@@ -692,10 +753,10 @@ class GalleryApp(app.App):
             self._text(ctx, self.ROWS[i], 0, y - 5, 11, rgb=(0.7, 0.7, 0.7))
             self._text(ctx, vals[self.ROWS[i]], 0, y + 9, 14)
         if first > 0:
-            self._text(ctx, "^", 95, -50, 12)
+            self._text(ctx, "^", 60, -76, 12)
         if first + shown < len(self.ROWS):
-            self._text(ctx, "v", 95, 76, 12)
-        self._text(ctx, "L/R change  OK clear", 0, 98, 11)
+            self._text(ctx, "v", 60, 84, 12)
+        self._text(ctx, {"Source": "OK choose", "Clear kept": "OK clear"}.get(self.ROWS[self._row], "L/R change"), 0, 100, 11)
 
     def _measure(self, path):
         """Work out how to show a picture before decoding it: where it goes,

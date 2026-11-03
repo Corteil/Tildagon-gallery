@@ -77,8 +77,8 @@ gapp.storage.current = lambda: pics
 gapp.storage.KEPT_ROOT = tmp + "/flash"
 gapp.storage.KEPT = tmp + "/flash/kept"
 gapp.storage.SETTINGS = tmp + "/flash/settings.txt"
-O = len(gapp.SPECIAL)   # the special tiles come first
-a = gapp.GalleryApp()
+O = 0   # no special cells: the first cell is a picture
+a = gapp.GalleryApp(); a.state = "browse"   # it opens on the home carousel
 assert len(a.files) == 5
 V = ".view240"
 
