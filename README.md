@@ -107,6 +107,7 @@ the `mpy` number: the prebuilt file is for 11014). Please send me the output.
 | `scanner.py`, `imginfo.py`, `thumbs.py` | finding pictures, reading sizes from headers, making thumbnails |
 | `storage.py`, `keep.py`, `stage.py` | which card, the 10 pictures kept in flash, the slideshow's PSRAM RAM disk |
 | `tools/prepare.py` | the PC tool |
+| `tests/` | PC tests (`tests/run_all.sh`); a GitHub Actions job runs them on every push |
 | `tools/badge.py`, `tools/selftest.py` | deploy to a badge and run the on-badge self-test |
 | `imgtool.py`, `_imgtool.mpy` | on-badge resizing (Python + prebuilt native code); source and tests in `natmod/` |
 

@@ -73,17 +73,28 @@ Image.new("RGB", (300, 200), (50, 200, 50)).save(pics + "/b_small.png")
 Image.new("RGB", (40, 40), (50, 50, 200)).save(pics + "/c_anim.gif")        # imgtool can't read GIF
 open(pics + "/d_bad.jpg", "wb").write(b"junk")
 Image.new("RGB", (800, 800), (9, 9, 9)).save(pics + "/e_square.png")
-gapp.ROOT = pics
+gapp.storage.current = lambda: pics
+gapp.storage.KEPT_ROOT = tmp + "/flash"
+gapp.storage.KEPT = tmp + "/flash/kept"
+gapp.storage.SETTINGS = tmp + "/flash/settings.txt"
+O = len(gapp.SPECIAL)   # the special tiles come first
 a = gapp.GalleryApp()
 assert len(a.files) == 5
+V = ".view240"
+
+def idx(path):
+    return a.entries.index(path)
+
+def frame():
+    c = Ctx(); a.draw(c); a.update(30); return c
 
 # --- browse: thumbnails appear one per frame, selected tile first ---
-a.sel = 1
-c = Ctx(); a.draw(c); a.update(30)           # first frame loads the page, update makes one thumb
+a.sel = O + 1
+c = Ctx(); a.draw(c); a.update(30)           # update makes one thumb
 assert thumbs.imgtool.calls[-1] == ("thumb", "b_small.png"), thumbs.imgtool.calls
 assert os.path.exists(pics + "/.thumbs/b_small.png.png")
 for _ in range(10):
-    c = Ctx(); a.draw(c); a.update(30)
+    frame()
 t = sorted(f for f in os.listdir(pics + "/.thumbs"))
 assert t == ["a_big.jpg.png", "b_small.png.png", "e_square.png.png"], t   # gif and junk skipped
 assert not any(f.endswith(".part") for f in t)
@@ -91,56 +102,58 @@ for f in t:
     im = Image.open(pics + "/.thumbs/" + f); assert im.size == (80, 80) and im.format == "PNG"
 n = len(thumbs.imgtool.calls)
 for _ in range(5):
-    c = Ctx(); a.draw(c); a.update(30)
+    frame()
 assert len(thumbs.imgtool.calls) == n, "failed/finished pictures must not be retried every frame"
 c = Ctx(); a.draw(c)
-assert len(c.images) == 3 and c.texts == ["C", "D"], (len(c.images), c.texts)
+letters = [x for x in c.texts if len(x) == 1]
+assert len(c.images) == 3 and letters == ["C", "D"], (len(c.images), letters)
 print("thumbnails ok")
 
 # --- view: a too-big picture is shrunk, then drawn from the copy ---
-a.sel = 0; a.state = "view"
+a.sel = idx(pics + "/a_big.jpg"); a.state = "view"
 c = Ctx(); a.draw(c)
 assert c.texts == ["Resizing..."] and not c.images, (c.texts, c.images)
 a.update(30)
 c = Ctx(); a.draw(c)
 assert not c.texts and len(c.images) == 1, c.texts
-assert c.images[0][0] == pics + "/.view/a_big.jpg.jpg" and c.images[0][3:] == (240, 180), c.images
-v = Image.open(pics + "/.view/a_big.jpg.jpg"); assert v.size == (480, 360) and v.format == "JPEG"
+assert c.images[0][0] == pics + "/%s/a_big.jpg.jpg" % V and c.images[0][3:] == (240, 180), c.images
+v = Image.open(pics + "/%s/a_big.jpg.jpg" % V); assert v.size == (240, 180) and v.format == "JPEG"
 # coming back later uses the copy straight away, no flash of "Resizing"
-a.sel = 1; a.draw(Ctx()); a.sel = 0
+a.sel = idx(pics + "/b_small.png"); a.draw(Ctx()); a.sel = idx(pics + "/a_big.jpg")
 before = len(thumbs.imgtool.calls)
 c = Ctx(); a.draw(c); assert c.images and not c.texts and len(thumbs.imgtool.calls) == before
 # moving on while it was "Resizing" must not apply one picture's copy to another
 Image.new("RGB", (1500, 1500), (1, 2, 3)).save(pics + "/f_big2.png")
-a.files = scanner.list_images(pics); a.sel = a.files.index(pics + "/f_big2.png"); a.state = "view"; a._shown = None
+a.pics = scanner.list_images(pics); a._apply(); a.state = "view"
+a.sel = idx(pics + "/f_big2.png"); a._shown = None
 c = Ctx(); a.draw(c); assert c.texts == ["Resizing..."]
 a.update(30)                                # shrinks f_big2 ...
-a.sel = 0                                   # ... but the user has already moved on
+a.sel = idx(pics + "/a_big.jpg")            # ... but the user has already moved on
 c = Ctx(); a.draw(c)
-assert c.images and c.images[0][0] == pics + "/.view/a_big.jpg.jpg", c.images
-a.sel = a.files.index(pics + "/f_big2.png")
-c = Ctx(); a.draw(c); assert c.images[0][0] == pics + "/.view/f_big2.png.jpg", c.images
+assert c.images and c.images[0][0] == pics + "/%s/a_big.jpg.jpg" % V, c.images
+a.sel = idx(pics + "/f_big2.png")
+c = Ctx(); a.draw(c); assert c.images[0][0] == pics + "/%s/f_big2.png.jpg" % V, c.images
 print("shrink on view ok")
 
 # --- view: a big picture imgtool can't read says so ---
 Image.new("RGB", (1024, 1024)).save(pics + "/g_big.gif")
-a.files = scanner.list_images(pics); a.sel = a.files.index(pics + "/g_big.gif"); a.state = "view"
+a.pics = scanner.list_images(pics); a._apply(); a.state = "view"; a.sel = idx(pics + "/g_big.gif")
 c = Ctx(); a.draw(c); assert c.texts == ["Resizing..."]
 a.update(30); c = Ctx(); a.draw(c)
-assert c.texts == ["Too big", "1024 x 1024", "limit 262144 px"], c.texts
+assert c.texts == ["Too big", "1024 x 1024", "limit %d px" % gapp.MAX_PIXELS], c.texts
 n = len(thumbs.imgtool.calls); a.update(30); a.draw(Ctx()); assert len(thumbs.imgtool.calls) == n
 print("unreadable big picture ok")
 
-# --- stale cache: a newer original is shrunk again ---
+# --- an existing copy is reused without looking at timestamps (a badge with no clock) ---
 os.utime(pics + "/a_big.jpg", None)
-os.utime(pics + "/.view/a_big.jpg.jpg", (1, 1))
-assert thumbs.shrunk(pics + "/a_big.jpg", build=False) is None
-assert thumbs.shrunk(pics + "/a_big.jpg") == pics + "/.view/a_big.jpg.jpg"
-print("stale copy ok")
+os.utime(pics + "/%s/a_big.jpg.jpg" % V, (1, 1))
+assert thumbs.shrunk(pics + "/a_big.jpg", build=False) == pics + "/%s/a_big.jpg.jpg" % V
+print("existing copy reused ok")
 
-# --- no imgtool: the app behaves as before ---
-thumbs.available = False
-b = gapp.GalleryApp(); b.sel = 0; b.state = "view"
-c = Ctx(); b.draw(c); assert c.texts == ["Too big", "1600 x 1200", "limit 262144 px"], c.texts
-b.update(30)
+# --- keep in flash: the resized copy goes to flash, the 11th pushes out the oldest ---
+import gallery.keep as keep
+assert keep.add(pics + "/a_big.jpg") == "kept" and keep.has(pics + "/a_big.jpg")
+kept = Image.open(gapp.storage.KEPT + "/a_big.jpg"); assert kept.size == (240, 180)
+assert os.path.exists(gapp.storage.KEPT + "/.thumbs/a_big.jpg.png")
+print("keep ok")
 print("ALL NATIVE-APP TESTS PASSED")
