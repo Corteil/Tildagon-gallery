@@ -14,10 +14,10 @@ FALLBACK_ROOTS = ("/sdcard_1/Pictures",)
 LAYOUT = 0                 # index into LAYOUTS
 TOUCH_STEP = 1.0           # pads of finger travel round the ring per image
 # Pictures with more pixels than this are not drawn (the badge can run out of
-# memory decoding them). 512 x 512 is a cautious starting point: find your
+# memory decoding them). The screen is 240 x 240, so that is the starting point: find your
 # badge's real limit with `tools/prepare.py --test-ladder`, then raise or
 # lower this. 0 turns the check off.
-MAX_PIXELS = 512 * 512
+MAX_PIXELS = 240 * 240
 
 
 def _fit(w, h):
@@ -98,6 +98,7 @@ class GalleryApp(app.App):
                 path = self.files[self.sel]
                 self._small = (path, thumbs.shrunk(path))
                 self._shown = None  # measure again, now with the small copy
+                self.inputs.flush()  # presses made while we were busy
             return
         if self._page != self.sel // self.layout.per_page:
             return  # not drawn yet: nothing to look at
@@ -108,6 +109,7 @@ class GalleryApp(app.App):
                 if thumb is None and not thumbs.failed(path):
                     if thumbs.make(path):
                         self._tiles[i] = (path, scanner.thumb_path(path))
+                    self.inputs.flush()
                     return
 
     def _jump(self, ch):
@@ -215,9 +217,15 @@ class GalleryApp(app.App):
         if path != self._shown:
             self._measure(path)
         if self._rect:
-            ctx.image(self._draw_path, *self._rect)
+            try:
+                ctx.image(self._draw_path, *self._rect)
+            except Exception as e:  # show why, instead of a black screen
+                print("gallery: draw failed", self._draw_path, repr(e))
+                self._rect = None
+                self._note = ("Draw failed", type(e).__name__, self._draw_path.rsplit("/", 1)[-1])
+                self._message(ctx, *self._note)
         else:
-            self._message(ctx, *self._note)
+            self._message(ctx, *(self._note or ("Can't show", path.rsplit("/", 1)[-1])))
 
 
 __app_export__ = GalleryApp

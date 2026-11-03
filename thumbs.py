@@ -4,7 +4,7 @@ firmware, everything here does nothing and `available` is False: use
 tools/prepare.py on a PC instead.
 
     thumbs.make(path)   makes .thumbs/<name>.png next to the picture
-    thumbs.shrunk(path) makes .view/<name>.jpg and returns its path
+    thumbs.shrunk(path) makes .view240/<name>.jpg and returns its path
 """
 import os
 
@@ -15,7 +15,7 @@ except (ImportError, ValueError):  # the native part doesn't fit this firmware
 
 available = imgtool is not None
 THUMB = 80        # pixels; matches tools/prepare.py
-VIEW_MAX = 480    # longest side of a shrunk copy; matches prepare.py --max
+VIEW_MAX = 240    # longest side of a shrunk copy (the screen is 240 x 240)
 QUALITY = 85
 
 _failed = set()   # pictures that can't be done (not JPEG/PNG, damaged ...): don't retry
@@ -45,13 +45,6 @@ def _remove(path):
         pass
 
 
-def _newer(out, src):
-    try:
-        return os.stat(out)[8] >= os.stat(src)[8]
-    except OSError:
-        return False
-
-
 def failed(path):
     return path in _failed
 
@@ -60,7 +53,7 @@ def make(path):
     """Make the thumbnail for a picture. True if it is there afterwards."""
     from . import scanner
     out = scanner.thumb_path(path)
-    if _exists(out) and _newer(out, path):
+    if _exists(out):
         return True
     if not available or path in _failed:
         return False
@@ -80,12 +73,12 @@ def shrunk(path, build=True):
     """A copy of a picture small enough to draw. Returns its path, or None.
     With build=False only an existing copy is returned."""
     d, _, name = path.rpartition("/")
-    out = "%s/.view/%s.jpg" % (d, name)
-    if _exists(out) and _newer(out, path):
+    out = "%s/.view240/%s.jpg" % (d, name)
+    if _exists(out):
         return out
     if not build or not available or path in _failed:
         return None
-    _dir(path, ".view")
+    _dir(path, ".view240")
     tmp = out + ".part"
     try:
         imgtool.resize(path, tmp, VIEW_MAX, QUALITY)

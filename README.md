@@ -32,7 +32,7 @@ ones, which can be combined:
 * **On the badge**, with `imgtool.py` and `_imgtool.mpy` (source in [natmod](natmod)),
   which live in the app's own folder: no firmware change, nothing installed
   elsewhere. Thumbnails are made as you browse, and a
-  picture over `MAX_PIXELS` is shrunk into a `.view` copy when you open it.
+  picture over `MAX_PIXELS` is shrunk into a `.view240` copy when you open it.
 * **On a PC**, no firmware changes: `python tools/prepare.py ~/Photos /path/to/sdcard/Pictures`
   (needs Pillow) shrinks the pictures, turns them the right way up and writes
   the thumbnails to `.thumbs/`. It also handles GIF/BMP/WebP/TIFF.

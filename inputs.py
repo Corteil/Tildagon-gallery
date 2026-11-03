@@ -93,6 +93,15 @@ class Inputs:
             if _has(TOUCH[name], event.button):
                 self._touched.discard(int(name[5:]) - 1)
 
+    def flush(self):
+        """Forget presses and holds seen while the app was busy."""
+        self._queue = []
+        self._held = {}
+        try:
+            self._buttons.clear()
+        except AttributeError:
+            pass
+
     def keys(self, delta=0):
         names = []  # in the order pressed, each once, so frames behave the same every run
         for n in self._queue:
