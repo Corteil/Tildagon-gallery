@@ -261,6 +261,12 @@ assert len(fl.files) == 10
 fl.sel = O; press("confirm", app=fl); assert fl.state == "view"
 press("confirm", app=fl); fl.update(20)
 assert len(fl.files) == 9 and fl.state == "view" and fl.entries[fl.sel] not in gapp.SPECIAL
+real_free = gkeep.free
+gkeep.free = lambda: 0
+full = "%s/full.jpg" % big
+Image.new("RGB", (60, 60)).save(full)
+assert gkeep.add(full) == "full"
+gkeep.free = real_free
 print(tag, "keep ok")
 
 # ---- slideshow with the RAM disk ----
@@ -347,8 +353,12 @@ assert gstorage.load()["layout"] == "0"
 press("down", app=st); press("right", app=st); assert st.seconds == (7 if False else st.seconds)
 press("left", app=st); press("left", app=st)
 assert st.seconds == max(gapp.SECONDS[0], st.seconds)
-press("down", app=st)
-gkeep.add  # clear kept
+press("down", app=st)                          # Kept size
+assert gkeep.size == 240
+press("right", app=st); assert gkeep.size == 480 and gstorage.load()["keep_px"] == "480"
+press("left", app=st); press("left", app=st); assert gkeep.size == 720   # wraps
+press("right", app=st); assert gkeep.size == 240
+press("down", app=st)                          # Clear kept
 before = gkeep.count()
 press("confirm", app=st); assert gkeep.count() == 0 and st._toast_text == "Cleared"
 press("cancel", app=st); assert st.state == "browse"

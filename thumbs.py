@@ -5,6 +5,7 @@ tools/prepare.py on a PC instead.
 
     thumbs.make(path)   makes .thumbs/<name>.png next to the picture
     thumbs.shrunk(path) makes .view240/<name>.jpg and returns its path
+    (a bigger `size=` goes in .view<size>)
 """
 import os
 
@@ -69,19 +70,22 @@ def make(path):
     return True
 
 
-def shrunk(path, build=True):
-    """A copy of a picture small enough to draw. Returns its path, or None.
-    With build=False only an existing copy is returned."""
+def shrunk(path, build=True, size=None):
+    """A copy of a picture small enough to draw (longest side `size`, default
+    VIEW_MAX). Returns its path, or None. With build=False only an existing
+    copy is returned."""
+    size = size or VIEW_MAX
     d, _, name = path.rpartition("/")
-    out = "%s/.view240/%s.jpg" % (d, name)
+    folder = ".view%d" % size
+    out = "%s/%s/%s.jpg" % (d, folder, name)
     if _exists(out):
         return out
     if not build or not available or path in _failed:
         return None
-    _dir(path, ".view240")
+    _dir(path, folder)
     tmp = out + ".part"
     try:
-        imgtool.resize(path, tmp, VIEW_MAX, QUALITY)
+        imgtool.resize(path, tmp, size, QUALITY)
         os.rename(tmp, out)
     except (ValueError, NotImplementedError, MemoryError, OSError):
         _remove(tmp)

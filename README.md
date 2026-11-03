@@ -21,8 +21,9 @@ listed. The first four tiles of the mosaic are not pictures:
   the **Flash** copy (below). The choice is remembered.
 * **Slides**: start the slideshow.
 * **Settings**: LEFT/RIGHT change the mosaic layout (3x3 grid, 4x4 grid,
-  honeycomb, focus ring; the last two keep the selected picture in the middle) and the slide timer; CONFIRM on "Clear kept" empties
-  the flash copies. Both are remembered.
+  honeycomb, focus ring; the last two keep the selected picture in the middle), the slide timer
+  and the kept size;  CONFIRM on "Clear kept" empties
+  the flash copies. All of these are remembered. "Kept size" is the size of the copies kept in flash; keeping refuses when less than 300 KB of flash would be left.
 
 | | Browse | Viewer | Slideshow |
 |---|---|---|---|
@@ -39,7 +40,7 @@ Holding a direction repeats it.
 
 The HDMI hexpansion and an SD hexpansion can't both be fitted, so to use the
 gallery with HDMI the pictures have to be in the badge itself. In the viewer,
-CONFIRM keeps a resized copy (at most 240 px) in the badge's flash, in
+CONFIRM keeps a resized copy (240 px, or 480 or 720 from Settings: the bigger ones are for the HDMI display, the badge's own screen only shows 240) in the badge's flash, in
 `/gallery/kept`; CONFIRM again takes it out. At most **10** are kept: keeping an
 11th drops the oldest. Pick **Flash (kept)** in Storage to browse them (it opens
 by itself when there is no card).

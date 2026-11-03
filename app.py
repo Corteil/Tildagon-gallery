@@ -51,6 +51,12 @@ class GalleryApp(app.App):
             self.layout_no = LAYOUT
         self.layout = LAYOUTS[self.layout_no][1]()
         self._bigs = {}        # picture -> its 240 px copy (focus ring), or None
+        try:
+            keep.size = int(saved.get("keep_px", keep.size))
+            if keep.size not in keep.SIZES:
+                keep.size = keep.SIZES[0]
+        except ValueError:
+            pass
         self._thumbs = {}      # picture -> its thumbnail path, or None if not made yet
         self._row = 0          # settings screen: selected row
         self.state = "browse"  # browse, view, search, storage or show
@@ -213,6 +219,7 @@ class GalleryApp(app.App):
             msg = {"kept": "Kept %d/%d" % (keep.count(), keep.MAX_KEEP),
                    "replaced": "Kept (oldest dropped)",
                    "already": "Already kept",
+                   "full": "Flash is full",
                    "failed": "Can't keep it"}[r]
         self._shown = None
         self.inputs.flush()
@@ -236,7 +243,7 @@ class GalleryApp(app.App):
             self._apply()
             self.state = "browse"
 
-    ROWS = ("Layout", "Slide timer", "Clear kept")
+    ROWS = ("Layout", "Slide timer", "Kept size", "Clear kept")
 
     def _k_settings(self, key):
         if key in ("UP", "PREV"):
@@ -252,7 +259,11 @@ class GalleryApp(app.App):
             elif self._row == 1:
                 self.seconds = max(SECONDS[0], min(SECONDS[1], self.seconds + d))
                 storage.save(seconds=self.seconds)
-        elif key == "CONFIRM" and self._row == 2:
+            elif self._row == 2:
+                sizes = keep.SIZES
+                keep.size = sizes[(sizes.index(keep.size) + d) % len(sizes)]
+                storage.save(keep_px=keep.size)
+        elif key == "CONFIRM" and self._row == 3:
             for p in scanner.list_images(storage.KEPT):
                 keep.remove(p)
             if self.folder == storage.KEPT:
@@ -536,16 +547,16 @@ class GalleryApp(app.App):
     def _draw_settings(self, ctx):
         self._text(ctx, "Settings", 0, -85, 16, rgb=(0.8, 0.8, 0.9))
         vals = ("< %s >" % LAYOUTS[self.layout_no][0], "< %d s >" % self.seconds,
-                "%d kept" % keep.count())
+                "< %d px >" % keep.size, "%d kept" % keep.count())
         for i, name in enumerate(self.ROWS):
-            y = -45 + i * 42
+            y = -52 + i * 34
             if i == self._row:
                 ctx.rgb(1, 1, 1)
                 ctx.line_width = 2
-                ctx.rectangle(-85, y - 18, 170, 38).stroke()
-            self._text(ctx, name, 0, y - 6, 13, rgb=(0.7, 0.7, 0.7))
-            self._text(ctx, vals[i], 0, y + 10, 15)
-        self._text(ctx, "L/R change  OK clear", 0, 88, 11)
+                ctx.rectangle(-85, y - 15, 170, 32).stroke()
+            self._text(ctx, name, 0, y - 5, 11, rgb=(0.7, 0.7, 0.7))
+            self._text(ctx, vals[i], 0, y + 9, 14)
+        self._text(ctx, "L/R change  OK clear", 0, 92, 11)
 
     def _measure(self, path):
         """Work out how to show a picture before decoding it: where it goes,

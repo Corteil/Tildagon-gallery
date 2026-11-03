@@ -155,5 +155,12 @@ import gallery.keep as keep
 assert keep.add(pics + "/a_big.jpg") == "kept" and keep.has(pics + "/a_big.jpg")
 kept = Image.open(gapp.storage.KEPT + "/a_big.jpg"); assert kept.size == (240, 180)
 assert os.path.exists(gapp.storage.KEPT + "/.thumbs/a_big.jpg.png")
+gapp.keep.size = 480
+Image.new("RGB", (1600, 1200), (9, 99, 9)).save(pics + "/h_big3.jpg")
+assert keep.add(pics + "/h_big3.jpg") == "kept"
+assert Image.open(gapp.storage.KEPT + "/h_big3.jpg").size == (480, 360)
+assert os.path.isdir(pics + "/.view480")
+keep.remove(pics + "/h_big3.jpg")
+assert not os.path.exists(gapp.storage.KEPT + "/h_big3.jpg")
 print("keep ok")
 print("ALL NATIVE-APP TESTS PASSED")

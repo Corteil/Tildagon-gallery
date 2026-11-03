@@ -11,6 +11,9 @@ import os
 from . import scanner, storage, thumbs, imginfo
 
 MAX_KEEP = 10
+SIZES = (240, 480, 720)   # longest side of a kept copy; bigger ones are for the HDMI display
+size = 240                # the one in use (the Settings tile changes it)
+MIN_FREE = 300 * 1024     # flash that must stay free
 MAX_COPY = 96 * 1024   # without imgtool, a small JPEG this size or less is copied as it is
 ORDER = storage.KEPT + "/.order"
 
@@ -71,6 +74,8 @@ def remove(path):
             return
     _remove(path)
     _remove(scanner.thumb_path(path))
+    for px in SIZES:  # copies the viewer made to draw a big kept picture on the badge
+        _remove("%s/.view%d/%s.jpg" % (storage.KEPT, px, _name(path)))
     _write_order([n for n in _order() if n != _name(path)])
 
 
@@ -91,19 +96,30 @@ def _copy(src, dst):
     return True
 
 
+def free():
+    """Bytes free in the flash (a big number if it can't be told)."""
+    try:
+        st = os.statvfs(storage.KEPT_ROOT if scanner.exists(storage.KEPT_ROOT) else "/")
+        return st[0] * st[3]
+    except (OSError, AttributeError):
+        return 1 << 30
+
+
 def add(path):
     if has(path):
         return "already"
+    if free() < MIN_FREE:
+        return "full"
     storage._mkdirs()
-    src = thumbs.shrunk(path) if thumbs.available else None
+    src = thumbs.shrunk(path, size=size) if thumbs.available else None
     out = storage.KEPT + "/" + _kname(path)
     if src is None:  # no resizer, or it can't do this one: copy only if already small
-        size = imginfo.size(path)
+        dims = imginfo.size(path)
         try:
             small = os.stat(path)[6] <= MAX_COPY
         except OSError:
             small = False
-        if not (small and size and size[0] * size[1] <= thumbs.VIEW_MAX ** 2
+        if not (small and dims and dims[0] * dims[1] <= thumbs.VIEW_MAX ** 2
                 and path.lower().endswith((".jpg", ".jpeg"))):
             return "failed"
         src = path
