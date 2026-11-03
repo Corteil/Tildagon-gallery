@@ -8,6 +8,10 @@ with the badge plugged in over USB. Needs:  pip install mpremote
   badge.py info            MicroPython version, mpy number, free memory
   badge.py repl            open a REPL (Ctrl-] to leave)
 
+A photo under /sdcard needs the SD hexpansion mounted. If the SD Card app on the
+badge has not mounted it, the test mounts it itself (hexpansion slot --sd-port,
+default 4, the same SPI setup as the SD hexpansion app).
+
 Options: --name gallery (folder under /apps), --port /dev/ttyACM0 (default: first
 badge found; list them with `badge.py ports`)."""
 import argparse, os, subprocess, sys
@@ -16,6 +20,19 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 FILES = ["__init__.py", "app.py", "inputs.py", "layouts.py", "scanner.py", "imginfo.py",
          "thumbs.py", "touch_scroll.py", "imgtool.py", "_imgtool.mpy", "metadata.json", "tildagon.toml"]
+
+
+# Mounts the SD hexpansion in slot SD_PORT at /sdcard unless it is already there.
+SD_MOUNT = (
+    "import os,vfs\n"
+    "try:\n os.listdir('/sdcard')\n"
+    "except OSError:\n"
+    " from machine import SDCard\n"
+    " from system.hexpansion.config import HexpansionConfig\n"
+    " c=HexpansionConfig(%d)\n"
+    " c.ls_pin[0].init(c.ls_pin[0].OUT);c.ls_pin[0].on()\n"
+    " vfs.mount(SDCard(slot=3,sck=c.pin[2],cs=c.pin[0],mosi=c.pin[1],miso=c.pin[3]),'/sdcard')\n"
+)
 
 
 def mp(port, *args, check=True):
@@ -37,6 +54,7 @@ def main():
     ap.add_argument("--name", default="gallery")
     ap.add_argument("--port")
     ap.add_argument("--photo")
+    ap.add_argument("--sd-port", type=int, default=4, help="hexpansion slot of the SD card (default 4)")
     a = ap.parse_args()
     if a.cmd == "ports":
         mp(None, "connect", "list")
@@ -52,7 +70,8 @@ def main():
         mp(a.port, "fs", "cp", os.path.join(HERE, "selftest.py"), dest)
         arg = repr(a.photo) if a.photo else "None"
         # system.scheduler must load first: importing the badge OS eventbus directly is circular
-        code = ("import sys;sys.path.insert(0,'/apps');import system.scheduler;"
+        mount = SD_MOUNT % a.sd_port if a.photo and a.photo.startswith("/sdcard") else ""
+        code = (mount + "import sys;sys.path.insert(0,'/apps');import system.scheduler;"
                 "m=__import__('%s.selftest',None,None,['run']);m.run(%s)" % (a.name, arg))
         r = subprocess.run(["mpremote"] + (["connect", a.port] if a.port else []) + ["exec", code],
                            capture_output=True, text=True)
