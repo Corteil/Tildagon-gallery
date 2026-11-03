@@ -8,6 +8,9 @@ from . import scanner
 from . import thumbs
 
 ROOT = "/sdcard/Pictures"  # the SD card mounts at /sdcard; change to suit
+# Tried in turn if ROOT has no pictures. The Dual uSD hexpansion mounts its
+# first card at /sdcard_1 instead of /sdcard.
+FALLBACK_ROOTS = ("/sdcard_1/Pictures",)
 LAYOUT = 0                 # index into LAYOUTS
 TOUCH_STEP = 1.0           # pads of finger travel round the ring per image
 # Pictures with more pixels than this are not drawn (the badge can run out of
@@ -31,7 +34,7 @@ class GalleryApp(app.App):
         super().__init__()
         self.inputs = Inputs(self)
         self.scroller = TouchScroller(step=TOUCH_STEP, period=PADS)
-        self.files = scanner.list_images(ROOT)
+        self.root, self.files = scanner.find_images(ROOT, FALLBACK_ROOTS)
         self.layout = LAYOUTS[LAYOUT][1]()
         self.sel = 0
         self.state = "browse"  # "browse" or "view"
@@ -122,7 +125,7 @@ class GalleryApp(app.App):
         ctx.save()
         ctx.rgb(0, 0, 0).rectangle(-120, -120, 240, 240).fill()
         if not self.files:
-            self._message(ctx, "No images in", ROOT)
+            self._message(ctx, "No images in", self.root)
         elif self.state == "browse":
             self._draw_browse(ctx)
         else:

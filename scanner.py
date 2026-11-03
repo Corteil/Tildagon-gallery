@@ -18,6 +18,16 @@ def list_images(root):
     return out
 
 
+def find_images(primary, fallbacks=()):
+    """(folder, images) for the first of primary, then the fallbacks, that has
+    pictures in it. If none has, (primary, [])."""
+    for root in (primary,) + tuple(fallbacks):
+        files = list_images(root)
+        if files:
+            return root, files
+    return primary, []
+
+
 def thumb_path(path):
     """Where an image's thumbnail is: a PNG in a hidden .thumbs folder next
     to it, named after the picture (pic.jpg -> .thumbs/pic.jpg.png). The

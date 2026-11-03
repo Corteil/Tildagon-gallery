@@ -10,8 +10,9 @@ it has been run on a real badge yet.** Please try it and tell me what breaks.
 
 ## Using it
 
-Put pictures in `/sdcard/Pictures` (change `ROOT` in `app.py`). JPEG, PNG, BMP
-and GIF are listed.
+Put pictures in `/sdcard/Pictures` (change `ROOT` in `app.py`). If that has no
+pictures it tries `/sdcard_1/Pictures`, where the Dual uSD hexpansion mounts its
+first card (see `FALLBACK_ROOTS`). JPEG, PNG, BMP and GIF are listed.
 
 | | Browse | Viewer |
 |---|---|---|
