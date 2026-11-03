@@ -1,6 +1,6 @@
 """Mosaic layouts. A layout provides:
 
-    shape           "rect" or "hex": how each tile is cut
+    shape           "rect", "hex" or "circle": how each tile is cut
     tiles(sel, n)   what to draw when picture sel (of n) is selected: a list of
                     (index, x, y, w, h) in ctx coords (origin at the centre);
                     the tile for index sel gets the selection outline
@@ -40,26 +40,30 @@ class GridLayout:
         return new
 
 
-class HoneycombLayout(GridLayout):
-    """Hexagonal tiles in staggered rows, packed to fit the round screen."""
+class HoneycombLayout:
+    """A honeycomb built round the selected picture, which sits in the middle:
+    19 hexagons (it and two rings). The pictures run along rows of ROW, so
+    LEFT/RIGHT go one picture and UP/DOWN a row; the honeycomb moves, the
+    selection stays in the middle."""
     shape = "hex"
+    focus = False
+    per_page = 1
+    ROW = 6
 
-    def __init__(self, rows=(3, 4, 3), r=33, gap=3):
-        self.rows = rows
-        self.per_page = sum(rows)
+    def __init__(self, r=26, gap=3):
         w = sqrt(3) * r
-        h = 2 * r
         dx = w + gap
         dy = 1.5 * r + gap * 0.87
-        top = -dy * (len(rows) - 1) / 2
-        self.cells = []
-        self.row_of = []
-        for ri, cnt in enumerate(rows):
-            for ci in range(cnt):
-                cx = (ci - (cnt - 1) / 2) * dx
-                cy = top + ri * dy
-                self.cells.append((int(cx - w / 2), int(cy - h / 2), int(w), int(h)))
-                self.row_of.append(ri)
+        self.slots = []     # (picture offset, x, y, w, h), middle first
+        for dr in (0, -1, 1, -2, 2):
+            for dq in range(-2, 3):
+                if abs(dq + dr) <= 2:
+                    cx, cy = dx * (dq + dr / 2), dy * dr
+                    self.slots.append((dq + self.ROW * dr, int(cx - w / 2), int(cy - r), int(w), int(2 * r)))
+        self.slots.sort(key=lambda t: t[0] != 0)   # the middle one first (drawn first, so nothing hides it)
+
+    def tiles(self, sel, n):
+        return [(sel + o, x, y, w, h) for o, x, y, w, h in self.slots if 0 <= sel + o < n]
 
     @staticmethod
     def outline(x, y, w, h):
@@ -68,38 +72,13 @@ class HoneycombLayout(GridLayout):
         return [(cx + r * cos(pi / 6 + k * pi / 3), cy + r * sin(pi / 6 + k * pi / 3)) for k in range(6)]
 
     def move(self, sel, d, n):
-        if d == "LEFT":
-            return max(0, sel - 1)
-        if d == "RIGHT":
-            return min(n - 1, sel + 1)
-        per = self.per_page
-        base, i = sel // per * per, sel % per
-        x, y = self.cells[i][0] + self.cells[i][2] / 2, self.cells[i][1]
-        best, score = None, None
-        for j, c in enumerate(self.cells):
-            if base + j >= n or j == i:
-                continue
-            if (d == "UP" and c[1] < y - 1) or (d == "DOWN" and c[1] > y + 1):
-                dist = abs(c[0] + c[2] / 2 - x) + abs(c[1] - y) * 3  # the next row first
-                if score is None or dist < score:
-                    best, score = j, dist
-        if best is not None:
-            return base + best
-        # off the top or bottom of the page: the same column on the next page
-        nb = base - per if d == "UP" else base + per
-        if nb < 0 or nb >= n:
-            return sel
-        row = self.row_of[-1] if d == "UP" else 0
-        cands = [j for j in range(per) if self.row_of[j] == row and nb + j < n]
-        if not cands:
-            return sel
-        j = min(cands, key=lambda j: abs(self.cells[j][0] + self.cells[j][2] / 2 - x))
-        return nb + j
+        new = sel + {"LEFT": -1, "RIGHT": 1, "UP": -self.ROW, "DOWN": self.ROW}[d]
+        return new if 0 <= new < n else sel
 
 
 class FocusRingLayout:
-    """The selected picture big in the middle, its neighbours in a ring round it."""
-    shape = "rect"
+    """The selected picture big in the middle, its neighbours in a ring round it; all round."""
+    shape = "circle"
     focus = True
     per_page = 1
 

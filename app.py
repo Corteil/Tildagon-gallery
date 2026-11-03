@@ -1,4 +1,5 @@
 import app
+from math import pi
 
 from .layouts import LAYOUTS
 from .inputs import Inputs, PADS
@@ -19,6 +20,7 @@ TOUCH_STEP = 1.0           # pads of finger travel round the ring per image
 MAX_PIXELS = 240 * 240
 SEARCH, STORAGE, SHOW, SETTINGS = "@search", "@storage", "@show", "@settings"
 SPECIAL = (SEARCH, STORAGE, SHOW, SETTINGS)   # the first tiles; not pictures
+SHORT = {SEARCH: "Find", STORAGE: "SD", SHOW: "Show", SETTINGS: "Set"}  # on small tiles
 CHARS = "abcdefghijklmnopqrstuvwxyz0123456789 -_."   # on-badge search keyboard
 STAGE_AHEAD = 3                      # slideshow pictures kept ready in PSRAM
 SECONDS = (2, 60)                    # slideshow timer range
@@ -467,6 +469,9 @@ class GalleryApp(app.App):
         else:
             rgb, label, sub = (0.35, 0.35, 0.4), "Settings", LAYOUTS[self.layout_no][0][:9]
         ctx.rgb(*rgb).rectangle(x, y, w, h).fill()
+        if w < 60:   # a small tile: one short word
+            self._text(ctx, SHORT[e], x + w // 2, y + h // 2, 11)
+            return
         k = 1 if h < 90 else 1.8   # the big focus tile gets bigger text
         self._text(ctx, label, x + w // 2, y + h // 2 - 7 * k, 13 * k)
         self._text(ctx, sub, x + w // 2, y + h // 2 + 9 * k, 11 * k, rgb=(0.85, 0.85, 0.85))
@@ -480,6 +485,9 @@ class GalleryApp(app.App):
             for p in pts[1:]:
                 ctx.line_to(*p)
             ctx.close_path()
+        elif self.layout.shape == "circle":
+            ctx.begin_path()
+            ctx.arc(x + w / 2, y + h / 2, w / 2, 0, 2 * pi, 0)
         else:
             ctx.begin_path()
             ctx.rectangle(x, y, w, h)

@@ -21,7 +21,7 @@ listed. The first four tiles of the mosaic are not pictures:
   the **Flash** copy (below). The choice is remembered.
 * **Slides**: start the slideshow.
 * **Settings**: LEFT/RIGHT change the mosaic layout (3x3 grid, 4x4 grid,
-  honeycomb, focus ring) and the slide timer; CONFIRM on "Clear kept" empties
+  honeycomb, focus ring; the last two keep the selected picture in the middle) and the slide timer; CONFIRM on "Clear kept" empties
   the flash copies. Both are remembered.
 
 | | Browse | Viewer | Slideshow |
