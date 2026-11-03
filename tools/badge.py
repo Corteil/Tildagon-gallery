@@ -19,7 +19,7 @@ import argparse, os, subprocess, sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 FILES = ["__init__.py", "app.py", "inputs.py", "layouts.py", "scanner.py", "imginfo.py",
-         "thumbs.py", "touch_scroll.py", "storage.py", "keep.py", "stage.py", "imgtool.py", "_imgtool.mpy", "metadata.json", "tildagon.toml"]
+         "thumbs.py", "touch_scroll.py", "storage.py", "keep.py", "stage.py", "hdmi.py", "imgtool.py", "_imgtool.mpy", "metadata.json", "tildagon.toml"]
 
 
 # Mounts the SD hexpansion in slot SD_PORT at /sdcard unless it is already there.

@@ -24,10 +24,19 @@ listed; the badge's picture loader can't draw BMP, so `tools/prepare.py` convert
   mosaic layout (3x3 grid, 4x4 grid, honeycomb, focus ring; the last two keep
   the selected picture in the middle), slide timer, slide order (in order or
   shuffled), loop the slideshow or stop at the end, captions (file name and
-  size under the picture), the size of copies kept in flash (240, 480 or 720 px),
+  size under the picture), **HDMI screen** (see below), the size of copies kept in flash (240, 480 or 720 px),
   sort order (name, newest or oldest first), and "Clear kept" (CONFIRM) which
   empties the flash copies. Keeping refuses when less than 300 KB of flash would
   be left.
+
+**HDMI second screen.** With the HDMI hexpansion fitted and a badge firmware that
+has `display.Screen` (hazanjon's `feature/hdmi-mirror`), switch Settings > HDMI screen
+on. The picture you open in the viewer or slideshow then goes to the TV at 240 x 240
+(sent once per picture; the hexpansion holds it), and the badge's own screen shows the
+file name, position and slideshow timer. Leaving the app, or switching it off, hands
+the port back to the normal mirror. Without HDMI fitted you get a "No HDMI mirror
+found" toast and nothing else changes. 480 x 480 stills need a new frame type on
+the RP2350 side (see the plan in the hexpansion repo).
 
 | | Browse | Viewer | Slideshow |
 |---|---|---|---|
@@ -111,6 +120,7 @@ the `mpy` number: the prebuilt file is for 11014). Please send me the output.
 | `layouts.py` | mosaic layouts: 3x3 and 4x4 grids, honeycomb, focus ring |
 | `scanner.py`, `imginfo.py`, `thumbs.py` | finding pictures, reading sizes from headers, making thumbnails |
 | `storage.py`, `keep.py`, `stage.py` | which card, the 10 pictures kept in flash, the slideshow's PSRAM RAM disk |
+| `hdmi.py` | the HDMI hexpansion as an independent second screen (`display.Screen`, 240 x 240 `TDHD` for now) |
 | `tools/prepare.py` | the PC tool |
 | `tests/` | PC tests (`tests/run_all.sh`); a GitHub Actions job runs them on every push |
 | `tools/badge.py`, `tools/selftest.py` | deploy to a badge and run the on-badge self-test |

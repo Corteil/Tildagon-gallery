@@ -363,6 +363,10 @@ press("right", app=st); assert st.loop
 press("down", app=st)                          # captions
 assert not st.captions
 press("right", app=st); assert st.captions and gstorage.load()["captions"] == "1"
+press("down", app=st)                          # HDMI screen
+assert not st.hdmi_on
+press("right", app=st); assert st.hdmi_on and gstorage.load()["hdmi"] == "1"
+press("left", app=st); assert not st.hdmi_on and gstorage.load()["hdmi"] == "0"
 press("down", app=st)                          # kept size
 assert gkeep.size == 240
 press("right", app=st); assert gkeep.size == 480 and gstorage.load()["keep_px"] == "480"
@@ -381,6 +385,61 @@ gstorage.save(layout=2)
 st2 = make(["p%02d.jpg" % i for i in range(40)])
 assert st2.layout_no == 2 and st2.layout.shape == "hex"
 gstorage.save(layout=0)
+
+# ---- HDMI second screen, against a stand-in for the firmware's display module ----
+import gallery.hdmi as ghdmi
+class FakeScreen:
+    made = []
+    def __init__(self, port, width, height, baudrate, driver):
+        self.args = (port, width, height, baudrate, driver["header"]); self.frames = 0; self.closed = False
+        FakeScreen.made.append(self)
+    def get_ctx(self): return Ctx()
+    def end_frame(self, c): self.frames += 1; self.last = c
+    def deinit(self): self.closed = True
+class FakeDisplay:
+    mirror = {3}
+    log = []
+    Screen = FakeScreen
+    @classmethod
+    def is_mirror_active(cls, p): return p in cls.mirror
+    @classmethod
+    def detach_mirror(cls, port): cls.mirror.discard(port); cls.log.append(("detach", port))
+    @classmethod
+    def attach_mirror(cls, port, baudrate, driver): cls.mirror.add(port); cls.log.append(("attach", port))
+real_display = ghdmi.display
+ghdmi.display = FakeDisplay
+def real(n):
+    from PIL import Image
+    d = tempfile.mkdtemp()
+    for i in range(n):
+        Image.new("RGB", (120, 90), (i * 40, 90, 160)).save(os.path.join(d, "p%02d.png" % i))
+    return d
+hv = make([], folder=real(5))
+hv.hdmi_on = True
+hv.sel = hv._first; press("confirm", app=hv); assert hv.state == "view"
+for _ in range(6):
+    hv.draw(Ctx()); hv.update(50)
+assert hv.hdmi.active and hv.hdmi.port == 3, hv.hdmi.error
+scr = FakeScreen.made[-1]
+assert scr.args == (3, 240, 240, 10_000_000, b"TDHD") and scr.frames == 1
+for _ in range(4):
+    hv.draw(Ctx()); hv.update(50)
+assert scr.frames == 1                       # unchanged picture: not sent again
+press("right", app=hv)
+for _ in range(8):
+    hv.draw(Ctx()); hv.update(50)
+assert scr.frames == 2
+press("cancel", app=hv); press("cancel", app=hv)
+assert not hv.hdmi.active and scr.closed and 3 in FakeDisplay.mirror   # mirror restored
+# no HDMI fitted: say so once, don't keep trying
+FakeDisplay.mirror = set(); FakeDisplay.log = []
+hn = make([], folder=real(5)); hn.hdmi_on = True
+hn.sel = hn._first; press("confirm", app=hn)
+for _ in range(10):
+    hn.draw(Ctx()); hn.update(50)
+assert not hn.hdmi.active and hn._hdmi_failed and not FakeDisplay.log
+ghdmi.display = real_display
+print(tag, "hdmi ok")
 
 class RecCtx:
     CENTER = MIDDLE = 0

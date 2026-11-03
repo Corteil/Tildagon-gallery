@@ -11,6 +11,7 @@ from . import thumbs
 from . import storage
 from . import keep
 from . import stage
+from . import hdmi
 
 LAYOUT = 0                 # index into LAYOUTS
 TOUCH_STEP = 1.0           # pads of finger travel round the ring per image
@@ -52,6 +53,10 @@ class GalleryApp(app.App):
             self.seconds = max(SECONDS[0], min(SECONDS[1], int(saved.get("seconds", 5))))
         except ValueError:
             self.seconds = 5
+        self.hdmi = hdmi.SecondScreen()
+        self.hdmi_on = saved.get("hdmi") == "1"
+        self._hdmi_path = None     # the picture the TV is showing
+        self._hdmi_failed = False  # tried and couldn't: don't retry every frame
         self.shuffle = saved.get("shuffle") == "1"
         self.loop = saved.get("loop", "1") == "1"
         self.captions = saved.get("captions") == "1"
@@ -190,6 +195,7 @@ class GalleryApp(app.App):
             if came_from in self.entries:
                 self.sel = self.entries.index(came_from)
         else:
+            self.hdmi.stop()
             self.inputs.unbind()
             self.minimise()
             return True
@@ -272,7 +278,7 @@ class GalleryApp(app.App):
             self.state = "browse"
 
     ROWS = ("Layout", "Slide timer", "Slide order", "Loop slideshow", "Captions",
-            "Kept size", "Sort", "Clear kept")
+            "HDMI screen", "Kept size", "Sort", "Clear kept")
 
     def _k_settings(self, key):
         if key in ("UP", "PREV"):
@@ -298,6 +304,13 @@ class GalleryApp(app.App):
             elif r == "Captions":
                 self.captions = not self.captions
                 storage.save(captions=int(self.captions))
+            elif r == "HDMI screen":
+                self.hdmi_on = not self.hdmi_on
+                storage.save(hdmi=int(self.hdmi_on))
+                self._hdmi_failed = False
+                if not self.hdmi_on:
+                    self.hdmi.stop()   # the mirror takes over again
+                    self._hdmi_path = None
             elif r == "Kept size":
                 sizes = keep.SIZES
                 keep.size = sizes[(sizes.index(keep.size) + d) % len(sizes)]
@@ -402,6 +415,8 @@ class GalleryApp(app.App):
             job, self._pending = self._pending, None
             job()
             return
+        if self._hdmi_sync():
+            return
         if self.state == "show":
             self._prepare_next()
             return
@@ -426,6 +441,46 @@ class GalleryApp(app.App):
                     self._thumbs[path] = scanner.thumb_path(path)
                 self.inputs.flush()
                 return
+
+    def _hdmi_sync(self):
+        """Put the picture being viewed on the TV. True if that took this frame."""
+        if not self.hdmi_on or self.state not in ("view", "show"):
+            return False
+        path = self.entries[self.sel]
+        if self._shown != path or not self._rect or self._hdmi_path == path:
+            return False        # not measured yet, can't be drawn, or already up
+        if not self.hdmi.active:
+            if self._hdmi_failed:
+                return False
+            if not self.hdmi.start():
+                self._hdmi_failed = True
+                self._toast(self.hdmi.error)
+                return False
+        try:
+            c = self.hdmi.ctx()
+            c.rgb(0, 0, 0).rectangle(-120, -120, 240, 240).fill()
+            try:
+                c.image(self._ram or self._draw_path, *self._rect)
+            except Exception:
+                if not self._ram:
+                    raise
+                stage.disable()
+                self._ram = None
+                c.image(self._draw_path, *self._rect)
+            if self.captions and self._caption:
+                self._text(c, self._caption[0][:20], 0, 100, 11, bg=True)
+            self.hdmi.show(c)
+            self._hdmi_path = path
+        except Exception as e:
+            print("gallery: HDMI draw failed", repr(e))
+            self.hdmi.stop()
+            self._hdmi_failed = True
+            self._toast("HDMI: " + type(e).__name__)
+        self.inputs.flush()
+        return True
+
+    def deinit(self):
+        self.hdmi.stop()
 
     def _prepare_next(self):
         """Slideshow: shrink the current and next few pictures if need be and
@@ -620,6 +675,7 @@ class GalleryApp(app.App):
             "Slide order": "< %s >" % ("Shuffle" if self.shuffle else "In order"),
             "Loop slideshow": "< %s >" % ("On" if self.loop else "Off"),
             "Captions": "< %s >" % ("On" if self.captions else "Off"),
+            "HDMI screen": "< %s >" % ("Off" if not self.hdmi_on else "On" if self.hdmi.active or not self._hdmi_failed else "On: none"),
             "Kept size": "< %d px >" % keep.size,
             "Sort": "< %s >" % dict(SORTS)[self.sort],
             "Clear kept": "%d kept" % keep.count(),
@@ -681,10 +737,37 @@ class GalleryApp(app.App):
         self._rect = _fit(size[0], size[1])
         self._ram = stage.lookup(path) if self.state == "show" else None
 
+    def _draw_info(self, ctx, path):
+        """The badge's own screen while the TV shows the picture."""
+        self._text(ctx, "HDMI", 0, -92, 12, rgb=(0.4, 0.9, 1))
+        name = path.rsplit("/", 1)[-1]
+        self._text(ctx, name[:20], 0, -40, 15)
+        if len(name) > 20:
+            self._text(ctx, name[20:40], 0, -22, 15)
+        if self._caption:
+            self._text(ctx, self._caption[1], 0, 0, 12, rgb=(0.7, 0.7, 0.7))
+        n = len(self.files)
+        self._text(ctx, "%d / %d" % (self.entries.index(path) - self._first + 1, n), 0, 30, 18)
+        if self.state == "show":
+            frac = min(1.0, self._since / (self.seconds * 1000.0))
+            ctx.rgb(0.4, 0.9, 1)
+            ctx.line_width = 4
+            ctx.begin_path()
+            ctx.arc(0, 0, 105, -pi / 2, -pi / 2 + 2 * pi * frac, 0)
+            ctx.stroke()
+            self._text(ctx, "paused" if self._paused else "%d s" % self.seconds, 0, 62, 13)
+        else:
+            self._text(ctx, "L/R browse  OK keep", 0, 70, 11)
+        if self._kept and self.state == "view":
+            self._text(ctx, "kept", 0, 90, 11, rgb=(1, 0.9, 0.3))
+
     def _draw_view(self, ctx):
         path = self.entries[self.sel]
         if path != self._shown:
             self._measure(path)
+        if self.hdmi.active and self._rect and self._hdmi_path is not None:
+            self._draw_info(ctx, path)
+            return
         if self._rect:
             try:
                 try:
