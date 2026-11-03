@@ -17,8 +17,8 @@ TOUCH_STEP = 1.0           # pads of finger travel round the ring per image
 # badge's real limit with `tools/prepare.py --test-ladder`, then raise or
 # lower this. 0 turns the check off.
 MAX_PIXELS = 240 * 240
-SEARCH, STORAGE, SHOW = "@search", "@storage", "@show"
-SPECIAL = (SEARCH, STORAGE, SHOW)   # the first three tiles; not pictures
+SEARCH, STORAGE, SHOW, SETTINGS = "@search", "@storage", "@show", "@settings"
+SPECIAL = (SEARCH, STORAGE, SHOW, SETTINGS)   # the first tiles; not pictures
 CHARS = "abcdefghijklmnopqrstuvwxyz0123456789 -_."   # on-badge search keyboard
 STAGE_AHEAD = 3                      # slideshow pictures kept ready in PSRAM
 SECONDS = (2, 60)                    # slideshow timer range
@@ -38,14 +38,20 @@ class GalleryApp(app.App):
         super().__init__()
         self.inputs = Inputs(self)
         self.scroller = TouchScroller(step=TOUCH_STEP, period=PADS)
-        self.layout = LAYOUTS[LAYOUT][1]()
+        saved = storage.load()
         try:
-            self.seconds = max(SECONDS[0], min(SECONDS[1], int(storage.load().get("seconds", 5))))
+            self.seconds = max(SECONDS[0], min(SECONDS[1], int(saved.get("seconds", 5))))
         except ValueError:
             self.seconds = 5
+        try:
+            self.layout_no = int(saved.get("layout", LAYOUT)) % len(LAYOUTS)
+        except ValueError:
+            self.layout_no = LAYOUT
+        self.layout = LAYOUTS[self.layout_no][1]()
+        self._bigs = {}        # picture -> its 240 px copy (focus ring), or None
+        self._thumbs = {}      # picture -> its thumbnail path, or None if not made yet
+        self._row = 0          # settings screen: selected row
         self.state = "browse"  # browse, view, search, storage or show
-        self._page = -1
-        self._tiles = []       # (path, thumbnail path or None) for this page
         self._shown = None     # picture the viewer has measured
         self._rect = None      # where to draw it
         self._note = None      # lines to show instead, if it can't be drawn
@@ -75,7 +81,16 @@ class GalleryApp(app.App):
         self.folder = folder
         self.pics = scanner.list_images(folder)
         self.query = ""
+        self._thumbs = {}
+        self._bigs = {}
         self._apply()
+
+    def _thumb(self, path):
+        """Thumbnail path of a picture if there is one, else None. Looked up once."""
+        if path not in self._thumbs:
+            t = scanner.thumb_path(path)
+            self._thumbs[path] = t if scanner.exists(t) else None
+        return self._thumbs[path]
 
     def _apply(self, sel=None):
         """Rebuild the tile list: three special tiles, then the pictures that match the search."""
@@ -87,7 +102,6 @@ class GalleryApp(app.App):
         if self.files and sel < len(SPECIAL):
             sel = len(SPECIAL)
         self.sel = max(0, min(len(self.entries) - 1, sel))
-        self._page = -1
         self._shown = None
 
     def _step(self, d):
@@ -162,6 +176,9 @@ class GalleryApp(app.App):
                 self._start_storage()
             elif e == SHOW:
                 self._start_show()
+            elif e == SETTINGS:
+                self._row = 0
+                self.state = "settings"
             else:
                 self.state = "view"
         elif key in ("UP", "DOWN", "LEFT", "RIGHT"):
@@ -216,6 +233,30 @@ class GalleryApp(app.App):
             self.query = self._q.strip()
             self._apply()
             self.state = "browse"
+
+    ROWS = ("Layout", "Slide timer", "Clear kept")
+
+    def _k_settings(self, key):
+        if key in ("UP", "PREV"):
+            self._row = max(0, self._row - 1)
+        elif key in ("DOWN", "NEXT"):
+            self._row = min(len(self.ROWS) - 1, self._row + 1)
+        elif key in ("LEFT", "RIGHT"):
+            d = 1 if key == "RIGHT" else -1
+            if self._row == 0:
+                self.layout_no = (self.layout_no + d) % len(LAYOUTS)
+                self.layout = LAYOUTS[self.layout_no][1]()
+                storage.save(layout=self.layout_no)
+            elif self._row == 1:
+                self.seconds = max(SECONDS[0], min(SECONDS[1], self.seconds + d))
+                storage.save(seconds=self.seconds)
+        elif key == "CONFIRM" and self._row == 2:
+            for p in scanner.list_images(storage.KEPT):
+                keep.remove(p)
+            if self.folder == storage.KEPT:
+                self.pics = []
+                self._apply()
+            self._toast("Cleared")
 
     def _start_storage(self):
         self._opts = []
@@ -304,17 +345,17 @@ class GalleryApp(app.App):
                 self._shown = None  # measure again, now with the small copy
                 self.inputs.flush()  # presses made while we were busy
             return
-        if self.state != "browse" or self._page != self.sel // self.layout.per_page:
-            return  # not drawn yet: nothing to look at
-        order = [self.sel % self.layout.per_page] + list(range(len(self._tiles)))
-        for i in order:
-            if i < len(self._tiles):
-                path, thumb = self._tiles[i]
-                if thumb is None and path not in SPECIAL and not thumbs.failed(path):
-                    if thumbs.make(path):
-                        self._tiles[i] = (path, scanner.thumb_path(path))
-                    self.inputs.flush()
-                    return
+        if self.state != "browse":
+            return
+        shown = self.layout.tiles(self.sel, len(self.entries))
+        shown.sort(key=lambda t: t[0] != self.sel)   # the selected tile first
+        for t in shown:
+            path = self.entries[t[0]]
+            if path not in SPECIAL and self._thumb(path) is None and not thumbs.failed(path):
+                if thumbs.make(path):
+                    self._thumbs[path] = scanner.thumb_path(path)
+                self.inputs.flush()
+                return
 
     def _prepare_next(self):
         """Slideshow: shrink the current and next few pictures if need be and
@@ -363,6 +404,8 @@ class GalleryApp(app.App):
             self._draw_search(ctx)
         elif self.state == "storage":
             self._draw_storage(ctx)
+        elif self.state == "settings":
+            self._draw_settings(ctx)
         elif self.state in ("view", "show"):
             self._draw_view(ctx)
         else:
@@ -413,55 +456,88 @@ class GalleryApp(app.App):
         if len(self._opts) == 1:
             self._text(ctx, "no SD card found", 0, 85, 11)
 
-    def _load_page(self, page):
-        per = self.layout.per_page
-        self._tiles = []
-        for path in self.entries[page * per:(page + 1) * per]:
-            if path in SPECIAL:
-                self._tiles.append((path, None))
-                continue
-            t = scanner.thumb_path(path)
-            self._tiles.append((path, t if scanner.exists(t) else None))
-        self._page = page
-
     def _special_tile(self, ctx, e, x, y, w, h):
         if e == SEARCH:
             rgb, label, sub = (0.1, 0.3, 0.6), "Search", self.query[:9] or "name"
         elif e == STORAGE:
             rgb, label = (0.5, 0.3, 0.1), "Storage"
             sub = "Flash" if self.folder == storage.KEPT else self.folder.split("/")[1][:9]
-        else:
+        elif e == SHOW:
             rgb, label, sub = (0.1, 0.45, 0.2), "Slides", "%d s" % self.seconds
+        else:
+            rgb, label, sub = (0.35, 0.35, 0.4), "Settings", LAYOUTS[self.layout_no][0][:9]
         ctx.rgb(*rgb).rectangle(x, y, w, h).fill()
-        self._text(ctx, label, x + w // 2, y + h // 2 - 7, 13)
-        self._text(ctx, sub, x + w // 2, y + h // 2 + 9, 11, rgb=(0.85, 0.85, 0.85))
+        k = 1 if h < 90 else 1.8   # the big focus tile gets bigger text
+        self._text(ctx, label, x + w // 2, y + h // 2 - 7 * k, 13 * k)
+        self._text(ctx, sub, x + w // 2, y + h // 2 + 9 * k, 11 * k, rgb=(0.85, 0.85, 0.85))
+
+    def _outline(self, ctx, x, y, w, h):
+        """Begin the path of a tile's shape: a rectangle, or a hexagon."""
+        if self.layout.shape == "hex":
+            pts = self.layout.outline(x, y, w, h)
+            ctx.begin_path()
+            ctx.move_to(*pts[0])
+            for p in pts[1:]:
+                ctx.line_to(*p)
+            ctx.close_path()
+        else:
+            ctx.begin_path()
+            ctx.rectangle(x, y, w, h)
+
+    def _draw_tile(self, ctx, path, x, y, w, h, big):
+        if path in SPECIAL:
+            self._special_tile(ctx, path, x, y, w, h)
+            return
+        pic = self._thumb(path)
+        if big:  # the focus tile: the 240 px copy if there is one, it is sharper
+            if path not in self._bigs:
+                self._bigs[path] = thumbs.shrunk(path, build=False)
+            pic = self._bigs[path] or pic
+        if pic:
+            if self.layout.shape == "hex":   # square pictures, cut by the hexagon
+                ctx.image(pic, x + (w - h) // 2, y, h, h)
+            else:
+                ctx.image(pic, x, y, w, h)
+            return
+        # no thumbnail: a colour from the name, and its first letter
+        v = hash(path)
+        ctx.rgb(0.15 + ((v >> 16) & 255) / 400,
+                0.15 + ((v >> 8) & 255) / 400,
+                0.15 + (v & 255) / 400).rectangle(x, y, w, h).fill()
+        self._text(ctx, path.rsplit("/", 1)[-1][:1].upper(), x + w // 2, y + h // 2, 20)
 
     def _draw_browse(self, ctx):
-        per = self.layout.per_page
-        page = self.sel // per
-        if page != self._page:
-            self._load_page(page)
-        for i, (path, thumb) in enumerate(self._tiles):
-            x, y, w, h = self.layout.cells[i]
-            if path in SPECIAL:
-                self._special_tile(ctx, path, x, y, w, h)
-            elif thumb:
-                ctx.image(thumb, x, y, w, h)
-            else:
-                # no thumbnail: a colour from the name, and its first letter
-                v = hash(path)
-                ctx.rgb(0.15 + ((v >> 16) & 255) / 400,
-                        0.15 + ((v >> 8) & 255) / 400,
-                        0.15 + (v & 255) / 400).rectangle(x, y, w, h).fill()
-                self._text(ctx, path.rsplit("/", 1)[-1][:1].upper(), x + w // 2, y + h // 2, 20)
-        if not self.files and page == 0:
-            self._message(ctx, "No images in", self.folder.replace("/Pictures", ""), dy=40)
-            if self.query:
-                self._message(ctx, "matching", self.query, dy=75)
-        x, y, w, h = self.layout.cells[self.sel % per]
-        ctx.rgb(1, 1, 1)
-        ctx.line_width = 3
-        ctx.rectangle(x, y, w, h).stroke()
+        n = len(self.entries)
+        for idx, x, y, w, h in self.layout.tiles(self.sel, n):
+            ctx.save()
+            self._outline(ctx, x, y, w, h)
+            ctx.clip()
+            self._draw_tile(ctx, self.entries[idx], x, y, w, h,
+                            self.layout.focus and idx == self.sel)
+            ctx.restore()
+            if idx == self.sel:
+                self._outline(ctx, x, y, w, h)
+                ctx.rgb(1, 1, 1)
+                ctx.line_width = 3
+                ctx.stroke()
+        if not self.files:
+            short = self.folder.split("/")[1] if self.folder.count("/") > 1 else self.folder
+            self._text(ctx, ("No match: " + self.query)[:20] if self.query else "No images: " + short[:12],
+                       0, 100, 12, bg=True)
+
+    def _draw_settings(self, ctx):
+        self._text(ctx, "Settings", 0, -85, 16, rgb=(0.8, 0.8, 0.9))
+        vals = ("< %s >" % LAYOUTS[self.layout_no][0], "< %d s >" % self.seconds,
+                "%d kept" % keep.count())
+        for i, name in enumerate(self.ROWS):
+            y = -45 + i * 42
+            if i == self._row:
+                ctx.rgb(1, 1, 1)
+                ctx.line_width = 2
+                ctx.rectangle(-85, y - 18, 170, 38).stroke()
+            self._text(ctx, name, 0, y - 6, 13, rgb=(0.7, 0.7, 0.7))
+            self._text(ctx, vals[i], 0, y + 10, 15)
+        self._text(ctx, "L/R change  OK clear", 0, 88, 11)
 
     def _measure(self, path):
         """Work out how to show a picture before decoding it: where it goes,

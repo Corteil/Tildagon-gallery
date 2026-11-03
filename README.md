@@ -12,7 +12,7 @@ it has been run on a real badge yet.** Please try it and tell me what breaks.
 
 Put pictures in a `Pictures` folder on the SD card (`/sdcard/Pictures`, or
 `/sdcard_1/Pictures` for the Dual uSD hexpansion). JPEG, PNG, BMP and GIF are
-listed. The first three tiles of the mosaic are not pictures:
+listed. The first four tiles of the mosaic are not pictures:
 
 * **Search**: type part of a file name (USB keyboard, or on the badge: UP/DOWN
   picks a letter, RIGHT adds it, LEFT deletes, CONFIRM searches). CANCEL in the
@@ -20,6 +20,9 @@ listed. The first three tiles of the mosaic are not pictures:
 * **Storage**: choose which card to browse (every `/sdcard*` that is there) or
   the **Flash** copy (below). The choice is remembered.
 * **Slides**: start the slideshow.
+* **Settings**: LEFT/RIGHT change the mosaic layout (3x3 grid, 4x4 grid,
+  honeycomb, focus ring) and the slide timer; CONFIRM on "Clear kept" empties
+  the flash copies. Both are remembered.
 
 | | Browse | Viewer | Slideshow |
 |---|---|---|---|
@@ -100,7 +103,7 @@ the `mpy` number: the prebuilt file is for 11014). Please send me the output.
 |---|---|
 | `app.py`, `__init__.py`, `metadata.json`, `tildagon.toml` | the app |
 | `inputs.py`, `touch_scroll.py` | buttons, touch ring and keyboard |
-| `layouts.py` | mosaic layouts (3x3 and 4x4 grids so far) |
+| `layouts.py` | mosaic layouts: 3x3 and 4x4 grids, honeycomb, focus ring |
 | `scanner.py`, `imginfo.py`, `thumbs.py` | finding pictures, reading sizes from headers, making thumbnails |
 | `storage.py`, `keep.py`, `stage.py` | which card, the 10 pictures kept in flash, the slideshow's PSRAM RAM disk |
 | `tools/prepare.py` | the PC tool |
@@ -109,5 +112,4 @@ the `mpy` number: the prebuilt file is for 11014). Please send me the output.
 
 ## Planned
 
-The honeycomb and focus-ring mosaic layouts,
-a settings screen, and a second display on the HDMI hexpansion.
+A second display on the HDMI hexpansion (mirroring first), and trying all of this on real badges: the layouts, search, storage picker, flash copies and the slideshow have only been run against stand-ins so far.
