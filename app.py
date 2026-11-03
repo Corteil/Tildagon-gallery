@@ -1,4 +1,5 @@
 import app
+import random
 from math import pi
 
 from .layouts import LAYOUTS
@@ -51,6 +52,9 @@ class GalleryApp(app.App):
             self.seconds = max(SECONDS[0], min(SECONDS[1], int(saved.get("seconds", 5))))
         except ValueError:
             self.seconds = 5
+        self.shuffle = saved.get("shuffle") == "1"
+        self.loop = saved.get("loop", "1") == "1"
+        self.captions = saved.get("captions") == "1"
         self.sort = saved.get("sort", "name")
         if self.sort not in [s for s, _ in SORTS]:
             self.sort = "name"
@@ -75,6 +79,8 @@ class GalleryApp(app.App):
         self._wait = False     # too big: a shrunk copy is being made
         self._small = None     # (picture, its shrunk copy or None), once tried
         self._draw_path = None # what the viewer actually draws
+        self._caption = None   # (file name, size) for the captions setting
+        self._order = []       # slideshow order (entry numbers)
         self._ram = None       # its staged copy in the RAM disk, if any
         self._kept = False     # the picture in the viewer is kept in flash
         self._toast_text = None
@@ -153,7 +159,8 @@ class GalleryApp(app.App):
                 self.sel = max(0, min(len(self.entries) - 1, self.sel + steps))
             elif self.files:
                 for _ in range(abs(steps)):
-                    self.sel = self._step(1 if steps > 0 else -1)
+                    d = 1 if steps > 0 else -1
+                    self.sel = self._show_step(self.sel, d) if self.state == "show" else self._step(d)
 
         for key in self.inputs.keys(delta):
             if self._key(key):
@@ -264,7 +271,8 @@ class GalleryApp(app.App):
             self._apply()
             self.state = "browse"
 
-    ROWS = ("Layout", "Slide timer", "Kept size", "Sort", "Clear kept")
+    ROWS = ("Layout", "Slide timer", "Slide order", "Loop slideshow", "Captions",
+            "Kept size", "Sort", "Clear kept")
 
     def _k_settings(self, key):
         if key in ("UP", "PREV"):
@@ -273,24 +281,34 @@ class GalleryApp(app.App):
             self._row = min(len(self.ROWS) - 1, self._row + 1)
         elif key in ("LEFT", "RIGHT"):
             d = 1 if key == "RIGHT" else -1
-            if self._row == 0:
+            r = self.ROWS[self._row]
+            if r == "Layout":
                 self.layout_no = (self.layout_no + d) % len(LAYOUTS)
                 self.layout = LAYOUTS[self.layout_no][1]()
                 storage.save(layout=self.layout_no)
-            elif self._row == 1:
+            elif r == "Slide timer":
                 self.seconds = max(SECONDS[0], min(SECONDS[1], self.seconds + d))
                 storage.save(seconds=self.seconds)
-            elif self._row == 2:
+            elif r == "Slide order":
+                self.shuffle = not self.shuffle
+                storage.save(shuffle=int(self.shuffle))
+            elif r == "Loop slideshow":
+                self.loop = not self.loop
+                storage.save(loop=int(self.loop))
+            elif r == "Captions":
+                self.captions = not self.captions
+                storage.save(captions=int(self.captions))
+            elif r == "Kept size":
                 sizes = keep.SIZES
                 keep.size = sizes[(sizes.index(keep.size) + d) % len(sizes)]
                 storage.save(keep_px=keep.size)
-            elif self._row == 3:
+            elif r == "Sort":
                 names = [s for s, _ in SORTS]
                 self.sort = names[(names.index(self.sort) + d) % len(names)]
                 storage.save(sort=self.sort)
                 self.pics = scanner.list_images(self.folder, self.sort)
                 self._apply()
-        elif key == "CONFIRM" and self._row == 4:
+        elif key == "CONFIRM" and self.ROWS[self._row] == "Clear kept":
             for p in scanner.list_images(storage.KEPT):
                 keep.remove(p)
             if self.folder == storage.KEPT:
@@ -330,6 +348,13 @@ class GalleryApp(app.App):
         if _special(self.entries[self.sel]):
             self.sel = self._first
         stage.start()
+        self._order = list(range(self._first, len(self.entries)))
+        if self.shuffle:   # the one on screen first, then the rest in a random order
+            rest = [i for i in self._order if i != self.sel]
+            for i in range(len(rest) - 1, 0, -1):
+                j = random.randrange(i + 1)
+                rest[i], rest[j] = rest[j], rest[i]
+            self._order = [self.sel] + rest
         self._prepared = set()
         self._views = {}
         self._since = 0
@@ -347,7 +372,7 @@ class GalleryApp(app.App):
             storage.save(seconds=self.seconds)
             self._toast("%d s" % self.seconds)
         elif key in ("RIGHT", "NEXT", "LEFT", "PREV"):
-            self.sel = self._step(1 if key in ("RIGHT", "NEXT") else -1)
+            self.sel = self._show_step(self.sel, 1 if key in ("RIGHT", "NEXT") else -1)
             self._since = 0
 
     def _clock(self, delta):
@@ -356,7 +381,12 @@ class GalleryApp(app.App):
             return
         self._since += delta
         if self._since >= self.seconds * 1000:
-            nxt = self._step(1)
+            if not self.loop and self._order.index(self.sel) == len(self._order) - 1:
+                stage.stop()
+                self.state = "browse"
+                self._toast("End of slideshow")
+                return
+            nxt = self._show_step(self.sel, 1)
             if self.entries[nxt] in self._prepared:
                 self.sel = nxt
                 self._since = 0
@@ -404,7 +434,7 @@ class GalleryApp(app.App):
         j = self.sel
         for _ in range(min(len(self.files), STAGE_AHEAD + 1)):
             window.append(self.entries[j])
-            j = self._step_from(j)
+            j = self._show_step(j, 1)
         self._prepared &= set(window)  # the ones left behind are dropped from the RAM disk below
         for p in window:
             if p not in self._prepared:
@@ -419,12 +449,13 @@ class GalleryApp(app.App):
                 return
         stage.keep_only([self._views[p] for p in window if p in self._views])
 
-    def _step_from(self, j):
-        keep_sel, self.sel = self.sel, j
+    def _show_step(self, j, d):
+        """The picture after (d = 1) or before (d = -1) entry j in the slideshow's order, wrapping."""
         try:
-            return self._step(1)
-        finally:
-            self.sel = keep_sel
+            i = self._order.index(j)
+        except ValueError:
+            i = 0
+        return self._order[(i + d) % len(self._order)]
 
     def _jump(self, ch):
         """Select the next image (after the current one, wrapping) whose
@@ -582,18 +613,32 @@ class GalleryApp(app.App):
                        0, 100, 12, bg=True)
 
     def _draw_settings(self, ctx):
-        self._text(ctx, "Settings", 0, -85, 16, rgb=(0.8, 0.8, 0.9))
-        vals = ("< %s >" % LAYOUTS[self.layout_no][0], "< %d s >" % self.seconds,
-                "< %d px >" % keep.size, "< %s >" % dict(SORTS)[self.sort],
-                "%d kept" % keep.count())
-        for i, name in enumerate(self.ROWS):
-            y = -56 + i * 29
+        self._text(ctx, "Settings", 0, -88, 16, rgb=(0.8, 0.8, 0.9))
+        vals = {
+            "Layout": "< %s >" % LAYOUTS[self.layout_no][0],
+            "Slide timer": "< %d s >" % self.seconds,
+            "Slide order": "< %s >" % ("Shuffle" if self.shuffle else "In order"),
+            "Loop slideshow": "< %s >" % ("On" if self.loop else "Off"),
+            "Captions": "< %s >" % ("On" if self.captions else "Off"),
+            "Kept size": "< %d px >" % keep.size,
+            "Sort": "< %s >" % dict(SORTS)[self.sort],
+            "Clear kept": "%d kept" % keep.count(),
+        }
+        shown = 4
+        first = max(0, min(self._row - 1, len(self.ROWS) - shown))
+        for k in range(shown):
+            i = first + k
+            y = -50 + k * 36
             if i == self._row:
                 ctx.rgb(1, 1, 1)
                 ctx.line_width = 2
-                ctx.rectangle(-85, y - 13, 170, 28).stroke()
-            self._text(ctx, name, 0, y - 4, 10, rgb=(0.7, 0.7, 0.7))
-            self._text(ctx, vals[i], 0, y + 8, 13)
+                ctx.rectangle(-85, y - 16, 170, 34).stroke()
+            self._text(ctx, self.ROWS[i], 0, y - 5, 11, rgb=(0.7, 0.7, 0.7))
+            self._text(ctx, vals[self.ROWS[i]], 0, y + 9, 14)
+        if first > 0:
+            self._text(ctx, "^", 95, -50, 12)
+        if first + shown < len(self.ROWS):
+            self._text(ctx, "v", 95, 76, 12)
         self._text(ctx, "L/R change  OK clear", 0, 98, 11)
 
     def _measure(self, path):
@@ -605,6 +650,7 @@ class GalleryApp(app.App):
         self._note = None
         self._draw_path = path
         self._ram = None
+        self._caption = None
         self._kept = keep.has(path)
         tried = None
         if self._small and self._small[0] == path:
@@ -614,6 +660,7 @@ class GalleryApp(app.App):
         if size is None:
             self._note = ("Can't read", path.rsplit("/", 1)[-1])
             return
+        self._caption = (path.rsplit("/", 1)[-1], "%d x %d" % size)
         if MAX_PIXELS and size[0] * size[1] > MAX_PIXELS:
             small = None
             if thumbs.available:
@@ -656,6 +703,9 @@ class GalleryApp(app.App):
                 self._message(ctx, *self._note)
         else:
             self._message(ctx, *(self._note or ("Can't show", path.rsplit("/", 1)[-1])))
+        if self.captions and self._caption:
+            self._text(ctx, self._caption[0][:20], 0, 90, 11, bg=True)
+            self._text(ctx, self._caption[1], 0, 104, 10, bg=True, rgb=(0.8, 0.8, 0.8))
         if self._kept and self.state == "view":
             self._text(ctx, "kept", 0, -100, 11, bg=True, rgb=(1, 0.9, 0.3))
         if self.state == "show" and self._paused:

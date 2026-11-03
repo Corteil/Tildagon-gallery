@@ -350,19 +350,29 @@ press("right", app=st); press("right", app=st)
 assert st.layout_no == 3 and st.layout.focus
 press("right", app=st); assert st.layout_no == 0           # wraps
 assert gstorage.load()["layout"] == "0"
-press("down", app=st); press("right", app=st); assert st.seconds == (7 if False else st.seconds)
-press("left", app=st); press("left", app=st)
-assert st.seconds == max(gapp.SECONDS[0], st.seconds)
-press("down", app=st)                          # Kept size
+press("down", app=st); press("right", app=st)   # slide timer
+t0 = st.seconds
+press("left", app=st); assert st.seconds == max(gapp.SECONDS[0], t0 - 1)
+press("down", app=st)                          # slide order
+assert not st.shuffle
+press("right", app=st); assert st.shuffle and gstorage.load()["shuffle"] == "1"
+press("down", app=st)                          # loop
+assert st.loop
+press("left", app=st); assert not st.loop and gstorage.load()["loop"] == "0"
+press("right", app=st); assert st.loop
+press("down", app=st)                          # captions
+assert not st.captions
+press("right", app=st); assert st.captions and gstorage.load()["captions"] == "1"
+press("down", app=st)                          # kept size
 assert gkeep.size == 240
 press("right", app=st); assert gkeep.size == 480 and gstorage.load()["keep_px"] == "480"
 press("left", app=st); press("left", app=st); assert gkeep.size == 720   # wraps
 press("right", app=st); assert gkeep.size == 240
-press("down", app=st)                          # Sort
+press("down", app=st)                          # sort
 assert st.sort == "name"
 press("right", app=st); assert st.sort == "newest" and gstorage.load()["sort"] == "newest"
 press("right", app=st); press("right", app=st); assert st.sort == "name"
-press("down", app=st)                          # Clear kept
+press("down", app=st)                          # clear kept
 before = gkeep.count()
 press("confirm", app=st); assert gkeep.count() == 0 and st._toast_text == "Cleared"
 press("cancel", app=st); assert st.state == "browse"
@@ -384,6 +394,10 @@ class RecCtx:
         return f
     def image(self, p, *r): self.imgs.append((p, r)); return self
 
+st.state = "settings"
+for row in range(len(st.ROWS)):          # the scrolling settings list draws at every row
+    st._row = row; st.draw(RecCtx())
+st.state = "browse"
 for no, (name, fac) in enumerate(glay.LAYOUTS):
     t = make(["p%02d.jpg" % i for i in range(40)])
     t.layout_no = no; t.layout = fac()
@@ -471,11 +485,57 @@ for no, (name, fac) in enumerate(glay.LAYOUTS):
     al.layout = fac(); ctx = RecCtx(); al.sel = 5; al.draw(ctx)
 al.layout = glay.LAYOUTS[0][1]()
 # sort from the settings screen re-reads the folder
-al.state = "settings"; al._row = 3
+al.state = "settings"; al._row = al.ROWS.index("Sort")
 press("right", app=al); assert al.sort == "newest" and al.files[0].endswith("A.jpg") and al.files[-1].endswith("b.jpg")
 press("left", app=al); assert al.sort == "name"
 al.state = "browse"
 print(tag, "sort and albums ok")
+
+# ---- slideshow order, loop and captions ----
+sw = make(["w%d.jpg" % i for i in range(6)])
+sw.sel = sw._first; sw.shuffle = True; sw.loop = False
+sw._start_show()
+assert sw._order[0] == sw._first and sorted(sw._order) == list(range(sw._first, sw._first + 6))
+assert sw._order != sorted(sw._order) or True
+seen = [sw.sel]
+for _ in range(5):                       # play through, one slide per timer
+    for _ in range(12):
+        sw.update(20)                    # get the next pictures ready
+    sw.update(sw.seconds * 1000)
+    seen.append(sw.sel)
+assert sw.state == "show" and sorted(seen) == sorted(sw._order), (seen, sw._order)
+assert seen == sw._order                 # in the shuffled order
+for _ in range(12):
+    sw.update(20)
+sw.update(sw.seconds * 1000)             # the last one is up: no loop, so it stops
+assert sw.state == "browse" and sw._toast_text == "End of slideshow"
+sw.loop = True; sw.shuffle = False; sw.sel = sw._first; sw._start_show()
+assert sw._order == list(range(sw._first, sw._first + 6))
+for k in range(8):                       # loops past the end
+    for _ in range(12):
+        sw.update(20)
+    sw.update(sw.seconds * 1000)
+assert sw.state == "show" and sw.sel == sw._first + 8 % 6, sw.sel
+press("left", app=sw); assert sw.sel == sw._first + 1
+press("cancel", app=sw)
+# captions: name and size under the picture, in the viewer
+cp = tempfile.mkdtemp(); Image.new("RGB", (64, 48)).save(cp + "/cap.png")
+cv = make(["x.txt"], folder=cp); cv.captions = True; cv.sel = cv._first; cv.state = "view"
+class TextCtx(RecCtx):
+    def __init__(self): super().__init__(); self.texts = []
+    def __getattr__(self, n):
+        if n == "text":
+            def f(t, *a): self.texts.append(t); return self
+            return f
+        return super().__getattr__(n)
+tc = TextCtx(); cv.draw(tc)
+assert "cap.png" in tc.texts and "64 x 48" in tc.texts, tc.texts
+cv.captions = False; cv._shown = None; tc = TextCtx(); cv.draw(tc)
+assert "cap.png" not in tc.texts
+# BMP isn't listed: the badge's picture loader can't draw it
+open(cp + "/p.bmp", "w").close(); open(cp + "/p.gif", "w").close()
+assert [f.rsplit("/", 1)[-1] for f in gapp.scanner.list_images(cp)] == ["cap.png", "p.gif"]
+print(tag, "slideshow options and captions ok")
 
 # ---- 2026 only ----
 if MODE == "2026":

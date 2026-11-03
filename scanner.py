@@ -1,6 +1,7 @@
 import os
 
-EXTS = (".jpg", ".jpeg", ".png", ".bmp", ".gif")
+# What the badge's ctx.image() can draw (its stb_image is built for PNG, GIF and JPEG only: no BMP)
+EXTS = (".jpg", ".jpeg", ".png", ".gif")
 
 
 def list_images(root, sort="name"):

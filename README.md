@@ -11,8 +11,8 @@ it has been run on a real badge yet.** Please try it and tell me what breaks.
 ## Using it
 
 Put pictures in a `Pictures` folder on the SD card (`/sdcard/Pictures`, or
-`/sdcard_1/Pictures` for the Dual uSD hexpansion). JPEG, PNG, BMP and GIF are
-listed. Folders inside it are albums (after the four tiles below): CONFIRM opens one, CANCEL goes back up. The first four tiles of the mosaic are not pictures:
+`/sdcard_1/Pictures` for the Dual uSD hexpansion). JPEG, PNG and GIF (first frame) are
+listed; the badge's picture loader can't draw BMP, so `tools/prepare.py` converts those. Folders inside it are albums (after the four tiles below): CONFIRM opens one, CANCEL goes back up. The first four tiles of the mosaic are not pictures:
 
 * **Search**: type part of a file name (USB keyboard, or on the badge: UP/DOWN
   picks a letter, RIGHT adds it, LEFT deletes, CONFIRM searches). CANCEL in the
@@ -20,10 +20,14 @@ listed. Folders inside it are albums (after the four tiles below): CONFIRM opens
 * **Storage**: choose which card to browse (every `/sdcard*` that is there) or
   the **Flash** copy (below). The choice is remembered.
 * **Slides**: start the slideshow.
-* **Settings**: LEFT/RIGHT change the mosaic layout (3x3 grid, 4x4 grid,
-  honeycomb, focus ring; the last two keep the selected picture in the middle), the slide timer,
-  the kept size and the sort order (name, newest or oldest first);  CONFIRM on "Clear kept" empties
-  the flash copies. All of these are remembered. "Kept size" is the size of the copies kept in flash; keeping refuses when less than 300 KB of flash would be left.
+* **Settings** (LEFT/RIGHT change, UP/DOWN pick a row, all remembered):
+  mosaic layout (3x3 grid, 4x4 grid, honeycomb, focus ring; the last two keep
+  the selected picture in the middle), slide timer, slide order (in order or
+  shuffled), loop the slideshow or stop at the end, captions (file name and
+  size under the picture), the size of copies kept in flash (240, 480 or 720 px),
+  sort order (name, newest or oldest first), and "Clear kept" (CONFIRM) which
+  empties the flash copies. Keeping refuses when less than 300 KB of flash would
+  be left.
 
 | | Browse | Viewer | Slideshow |
 |---|---|---|---|
