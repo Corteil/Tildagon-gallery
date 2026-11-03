@@ -10,19 +10,44 @@ it has been run on a real badge yet.** Please try it and tell me what breaks.
 
 ## Using it
 
-Put pictures in `/sdcard/Pictures` (change `ROOT` in `app.py`). If that has no
-pictures it tries `/sdcard_1/Pictures`, where the Dual uSD hexpansion mounts its
-first card (see `FALLBACK_ROOTS`). JPEG, PNG, BMP and GIF are listed.
+Put pictures in a `Pictures` folder on the SD card (`/sdcard/Pictures`, or
+`/sdcard_1/Pictures` for the Dual uSD hexpansion). JPEG, PNG, BMP and GIF are
+listed. The first three tiles of the mosaic are not pictures:
 
-| | Browse | Viewer |
-|---|---|---|
-| Move | UP / DOWN / LEFT / RIGHT | RIGHT or DOWN next, LEFT or UP previous |
-| Open | CONFIRM | |
-| Back / quit | CANCEL (F) | CANCEL back to the mosaic |
-| Touch ring (2026) | slide a finger round it to move through the pictures | same |
-| USB keyboard | arrows, Enter, Esc, Space / Backspace for next / previous, a letter jumps to the next name starting with it | same |
+* **Search**: type part of a file name (USB keyboard, or on the badge: UP/DOWN
+  picks a letter, RIGHT adds it, LEFT deletes, CONFIRM searches). CANCEL in the
+  mosaic clears the search.
+* **Storage**: choose which card to browse (every `/sdcard*` that is there) or
+  the **Flash** copy (below). The choice is remembered.
+* **Slides**: start the slideshow.
+
+| | Browse | Viewer | Slideshow |
+|---|---|---|---|
+| Move | UP / DOWN / LEFT / RIGHT | RIGHT or DOWN next, LEFT or UP previous | LEFT / RIGHT skip |
+| CONFIRM | open / use a tile | keep in flash / take out of flash | pause / play |
+| UP / DOWN | | | timer 2 to 60 s (remembered) |
+| Back / quit | CANCEL (F) | CANCEL back to the mosaic | CANCEL stops |
+| Touch ring (2026) | slide a finger round it to move through the pictures | same | same |
+| USB keyboard | arrows, Enter, Esc, Space / Backspace for next / previous, a letter jumps to the next name starting with it | same | |
 
 Holding a direction repeats it.
+
+### Keeping pictures in flash
+
+The HDMI hexpansion and an SD hexpansion can't both be fitted, so to use the
+gallery with HDMI the pictures have to be in the badge itself. In the viewer,
+CONFIRM keeps a resized copy (at most 240 px) in the badge's flash, in
+`/gallery/kept`; CONFIRM again takes it out. At most **10** are kept: keeping an
+11th drops the oldest. Pick **Flash (kept)** in Storage to browse them (it opens
+by itself when there is no card).
+
+### Slideshow
+
+Each picture is resized if need be, and the next few are copied into a RAM disk
+in PSRAM so the card isn't read between slides. It moves on when the timer is
+up and the next picture is ready. If the firmware can't mount the RAM disk, or
+drawing from it fails, it quietly reads from the card instead (`ctx.image()`
+only takes file paths, so this is the part most in need of testing on a badge).
 
 ## Thumbnails and big pictures
 
@@ -77,11 +102,12 @@ the `mpy` number: the prebuilt file is for 11014). Please send me the output.
 | `inputs.py`, `touch_scroll.py` | buttons, touch ring and keyboard |
 | `layouts.py` | mosaic layouts (3x3 and 4x4 grids so far) |
 | `scanner.py`, `imginfo.py`, `thumbs.py` | finding pictures, reading sizes from headers, making thumbnails |
+| `storage.py`, `keep.py`, `stage.py` | which card, the 10 pictures kept in flash, the slideshow's PSRAM RAM disk |
 | `tools/prepare.py` | the PC tool |
 | `tools/badge.py`, `tools/selftest.py` | deploy to a badge and run the on-badge self-test |
 | `imgtool.py`, `_imgtool.mpy` | on-badge resizing (Python + prebuilt native code); source and tests in `natmod/` |
 
 ## Planned
 
-Slideshow with an adjustable timer, the honeycomb and focus-ring mosaic layouts,
+The honeycomb and focus-ring mosaic layouts,
 a settings screen, and a second display on the HDMI hexpansion.
