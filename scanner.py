@@ -3,18 +3,40 @@ import os
 EXTS = (".jpg", ".jpeg", ".png", ".bmp", ".gif")
 
 
-def list_images(root):
-    """Sorted list of image paths directly inside root (no recursion yet)."""
+def list_images(root, sort="name"):
+    """Image paths directly inside root. sort: "name" (not minding case),
+    "newest" or "oldest" (by file date)."""
+    try:
+        names = os.listdir(root)
+    except OSError:
+        return []
+    out = [root + "/" + n for n in sorted(names, key=lambda n: n.lower())
+           if not n.startswith(".") and n.lower().endswith(EXTS)]
+    if sort in ("newest", "oldest"):
+        def stamp(p):
+            try:
+                return os.stat(p)[8]
+            except OSError:
+                return 0
+        out.sort(key=stamp, reverse=(sort == "newest"))
+    return out
+
+
+def list_dirs(root):
+    """Names of the folders directly inside root (not the hidden ones), sorted."""
     try:
         names = os.listdir(root)
     except OSError:
         return []
     out = []
-    for n in sorted(names):
+    for n in sorted(names, key=lambda n: n.lower()):
         if n.startswith("."):
             continue
-        if n.lower().endswith(EXTS):
-            out.append(root + "/" + n)
+        try:
+            if os.stat(root + "/" + n)[0] & 0x4000:
+                out.append(root + "/" + n)
+        except OSError:
+            pass
     return out
 
 

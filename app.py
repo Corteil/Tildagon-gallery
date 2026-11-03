@@ -23,7 +23,13 @@ SPECIAL = (SEARCH, STORAGE, SHOW, SETTINGS)   # the first tiles; not pictures
 SHORT = {SEARCH: "Find", STORAGE: "SD", SHOW: "Show", SETTINGS: "Set"}  # on small tiles
 CHARS = "abcdefghijklmnopqrstuvwxyz0123456789 -_."   # on-badge search keyboard
 STAGE_AHEAD = 3                      # slideshow pictures kept ready in PSRAM
+SORTS = (("name", "Name"), ("newest", "Newest first"), ("oldest", "Oldest first"))
 SECONDS = (2, 60)                    # slideshow timer range
+
+
+def _special(e):
+    """True for the tiles that aren't pictures (their names start with @)."""
+    return e[0] == "@"
 
 
 def _fit(w, h):
@@ -45,6 +51,9 @@ class GalleryApp(app.App):
             self.seconds = max(SECONDS[0], min(SECONDS[1], int(saved.get("seconds", 5))))
         except ValueError:
             self.seconds = 5
+        self.sort = saved.get("sort", "name")
+        if self.sort not in [s for s, _ in SORTS]:
+            self.sort = "name"
         try:
             self.layout_no = int(saved.get("layout", LAYOUT)) % len(LAYOUTS)
         except ValueError:
@@ -81,13 +90,16 @@ class GalleryApp(app.App):
         self._prepared = set() # slideshow pictures made ready
         self._views = {}       # picture -> the small file the slideshow draws
         self.query = ""
-        self._open(storage.current())
+        self._open(storage.current(), root=storage.current())
 
     # ---- what is shown ----------------------------------------------
-    def _open(self, folder):
-        """Switch to the pictures in a folder."""
+    def _open(self, folder, root=None):
+        """Switch to the pictures in a folder (root: the top of this storage, for going back up)."""
         self.folder = folder
-        self.pics = scanner.list_images(folder)
+        if root:
+            self.root = root
+        self.pics = scanner.list_images(folder, self.sort)
+        self.albums = ["@dir:" + d for d in scanner.list_dirs(folder)] if folder != storage.KEPT else []
         self.query = ""
         self._thumbs = {}
         self._bigs = {}
@@ -104,11 +116,13 @@ class GalleryApp(app.App):
         """Rebuild the tile list: three special tiles, then the pictures that match the search."""
         q = self.query.lower()
         self.files = [p for p in self.pics if q in p.rpartition("/")[2].lower()]
-        self.entries = list(SPECIAL) + self.files
+        albums = self.albums if not q else []     # a search looks at pictures only
+        self.entries = list(SPECIAL) + albums + self.files
+        self._first = len(SPECIAL) + len(albums)  # where the pictures start
         if sel is None:
-            sel = len(SPECIAL) if self.files else 0
-        if self.files and sel < len(SPECIAL):
-            sel = len(SPECIAL)
+            sel = self._first if self.files else 0
+        elif self.files and sel < len(SPECIAL):
+            sel = self._first
         self.sel = max(0, min(len(self.entries) - 1, sel))
         self._shown = None
 
@@ -118,7 +132,7 @@ class GalleryApp(app.App):
         j = self.sel
         for _ in range(n):
             j = (j + d) % n
-            if self.entries[j] not in SPECIAL:
+            if not _special(self.entries[j]):
                 return j
         return self.sel
 
@@ -163,6 +177,11 @@ class GalleryApp(app.App):
         elif self.query:
             self.query = ""
             self._apply()
+        elif self.folder != self.root and self.folder.startswith(self.root):  # up out of an album
+            came_from = "@dir:" + self.folder
+            self._open(self.folder.rpartition("/")[0])
+            if came_from in self.entries:
+                self.sel = self.entries.index(came_from)
         else:
             self.inputs.unbind()
             self.minimise()
@@ -187,6 +206,8 @@ class GalleryApp(app.App):
             elif e == SETTINGS:
                 self._row = 0
                 self.state = "settings"
+            elif e.startswith("@dir:"):
+                self._open(e[5:])
             else:
                 self.state = "view"
         elif key in ("UP", "DOWN", "LEFT", "RIGHT"):
@@ -210,7 +231,7 @@ class GalleryApp(app.App):
             keep.remove(path)
             msg = "Removed"
             if self.folder == storage.KEPT:  # it was in this list
-                self.pics = scanner.list_images(storage.KEPT)
+                self.pics = scanner.list_images(storage.KEPT, self.sort)
                 self._apply(self.sel)
                 if not self.files:
                     self.state = "browse"
@@ -243,7 +264,7 @@ class GalleryApp(app.App):
             self._apply()
             self.state = "browse"
 
-    ROWS = ("Layout", "Slide timer", "Kept size", "Clear kept")
+    ROWS = ("Layout", "Slide timer", "Kept size", "Sort", "Clear kept")
 
     def _k_settings(self, key):
         if key in ("UP", "PREV"):
@@ -263,7 +284,13 @@ class GalleryApp(app.App):
                 sizes = keep.SIZES
                 keep.size = sizes[(sizes.index(keep.size) + d) % len(sizes)]
                 storage.save(keep_px=keep.size)
-        elif key == "CONFIRM" and self._row == 3:
+            elif self._row == 3:
+                names = [s for s, _ in SORTS]
+                self.sort = names[(names.index(self.sort) + d) % len(names)]
+                storage.save(sort=self.sort)
+                self.pics = scanner.list_images(self.folder, self.sort)
+                self._apply()
+        elif key == "CONFIRM" and self._row == 4:
             for p in scanner.list_images(storage.KEPT):
                 keep.remove(p)
             if self.folder == storage.KEPT:
@@ -293,15 +320,15 @@ class GalleryApp(app.App):
         elif key == "CONFIRM":
             folder = self._opts[self._opt][1]
             storage.save(folder=folder)
-            self._open(folder)
+            self._open(folder, root=folder)
             self.state = "browse"
 
     def _start_show(self):
         if not self.files:
             self._toast("No pictures")
             return
-        if self.entries[self.sel] in SPECIAL:
-            self.sel = len(SPECIAL)
+        if _special(self.entries[self.sel]):
+            self.sel = self._first
         stage.start()
         self._prepared = set()
         self._views = {}
@@ -364,7 +391,7 @@ class GalleryApp(app.App):
         shown.sort(key=lambda t: t[0] != self.sel)   # the selected tile first
         for t in shown:
             path = self.entries[t[0]]
-            if path not in SPECIAL and self._thumb(path) is None and not thumbs.failed(path):
+            if not _special(path) and self._thumb(path) is None and not thumbs.failed(path):
                 if thumbs.make(path):
                     self._thumbs[path] = scanner.thumb_path(path)
                 self.inputs.flush()
@@ -405,7 +432,7 @@ class GalleryApp(app.App):
         n = len(self.entries)
         for i in range(1, n + 1):
             j = (self.sel + i) % n
-            if self.entries[j] not in SPECIAL and self.entries[j].rsplit("/", 1)[-1].lower().startswith(ch):
+            if not _special(self.entries[j]) and self.entries[j].rsplit("/", 1)[-1].lower().startswith(ch):
                 self.sel = j
                 return
 
@@ -470,11 +497,21 @@ class GalleryApp(app.App):
             self._text(ctx, "no SD card found", 0, 85, 11)
 
     def _special_tile(self, ctx, e, x, y, w, h):
+        if e.startswith("@dir:"):
+            name = e.rsplit("/", 1)[-1]
+            ctx.rgb(0.55, 0.45, 0.1).rectangle(x, y, w, h).fill()
+            if w < 60:
+                self._text(ctx, name[:5], x + w // 2, y + h // 2, 11)
+            else:
+                k = 1 if h < 90 else 1.8
+                self._text(ctx, name[:9], x + w // 2, y + h // 2 - 7 * k, 13 * k)
+                self._text(ctx, "album", x + w // 2, y + h // 2 + 9 * k, 11 * k, rgb=(0.9, 0.9, 0.9))
+            return
         if e == SEARCH:
             rgb, label, sub = (0.1, 0.3, 0.6), "Search", self.query[:9] or "name"
         elif e == STORAGE:
             rgb, label = (0.5, 0.3, 0.1), "Storage"
-            sub = "Flash" if self.folder == storage.KEPT else self.folder.split("/")[1][:9]
+            sub = "Flash" if self.root == storage.KEPT else self.root.split("/")[1][:9]
         elif e == SHOW:
             rgb, label, sub = (0.1, 0.45, 0.2), "Slides", "%d s" % self.seconds
         else:
@@ -504,7 +541,7 @@ class GalleryApp(app.App):
             ctx.rectangle(x, y, w, h)
 
     def _draw_tile(self, ctx, path, x, y, w, h, big):
-        if path in SPECIAL:
+        if _special(path):
             self._special_tile(ctx, path, x, y, w, h)
             return
         pic = self._thumb(path)
@@ -547,16 +584,17 @@ class GalleryApp(app.App):
     def _draw_settings(self, ctx):
         self._text(ctx, "Settings", 0, -85, 16, rgb=(0.8, 0.8, 0.9))
         vals = ("< %s >" % LAYOUTS[self.layout_no][0], "< %d s >" % self.seconds,
-                "< %d px >" % keep.size, "%d kept" % keep.count())
+                "< %d px >" % keep.size, "< %s >" % dict(SORTS)[self.sort],
+                "%d kept" % keep.count())
         for i, name in enumerate(self.ROWS):
-            y = -52 + i * 34
+            y = -56 + i * 29
             if i == self._row:
                 ctx.rgb(1, 1, 1)
                 ctx.line_width = 2
-                ctx.rectangle(-85, y - 15, 170, 32).stroke()
-            self._text(ctx, name, 0, y - 5, 11, rgb=(0.7, 0.7, 0.7))
-            self._text(ctx, vals[i], 0, y + 9, 14)
-        self._text(ctx, "L/R change  OK clear", 0, 92, 11)
+                ctx.rectangle(-85, y - 13, 170, 28).stroke()
+            self._text(ctx, name, 0, y - 4, 10, rgb=(0.7, 0.7, 0.7))
+            self._text(ctx, vals[i], 0, y + 8, 13)
+        self._text(ctx, "L/R change  OK clear", 0, 98, 11)
 
     def _measure(self, path):
         """Work out how to show a picture before decoding it: where it goes,

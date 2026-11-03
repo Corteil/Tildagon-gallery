@@ -199,7 +199,7 @@ press("down", app=c)  # c
 press("right", app=c); assert c._q == "c"
 press("confirm", app=c)
 assert c.state == "browse" and c.query == "c"
-assert [f.rsplit("/", 1)[-1] for f in c.files] == ["Cranberry.png", "avocado.jpg", "cherry.jpg"], c.files
+assert [f.rsplit("/", 1)[-1] for f in c.files] == ["avocado.jpg", "cherry.jpg", "Cranberry.png"], c.files
 assert c.sel == O
 press("cancel", app=c)          # clears the filter, doesn't leave
 assert c.query == "" and len(c.files) == 5 and not c.minimised
@@ -358,6 +358,10 @@ assert gkeep.size == 240
 press("right", app=st); assert gkeep.size == 480 and gstorage.load()["keep_px"] == "480"
 press("left", app=st); press("left", app=st); assert gkeep.size == 720   # wraps
 press("right", app=st); assert gkeep.size == 240
+press("down", app=st)                          # Sort
+assert st.sort == "name"
+press("right", app=st); assert st.sort == "newest" and gstorage.load()["sort"] == "newest"
+press("right", app=st); press("right", app=st); assert st.sort == "name"
 press("down", app=st)                          # Clear kept
 before = gkeep.count()
 press("confirm", app=st); assert gkeep.count() == 0 and st._toast_text == "Cleared"
@@ -430,6 +434,48 @@ fr._bigs = {fr.entries[fr.sel]: "/view/big.jpg"}
 ctx = RecCtx(); fr.draw(ctx)
 assert ("/view/big.jpg" in [p for p, r in ctx.imgs]) and ctx.imgs[-1][0] == "/view/big.jpg" and ctx.imgs[-1][1] == (-52, -52, 104, 104), ctx.imgs[-1]
 print(tag, "settings and layouts ok")
+
+# ---- sort order and albums ----
+import time
+sd = tempfile.mkdtemp()
+for i, n in enumerate(["b.jpg", "A.jpg", "c.jpg"]):
+    p = os.path.join(sd, n); open(p, "w").close(); os.utime(p, (1000 + i * 100, 1000 + i * 100 if n != "A.jpg" else 5000))
+assert [f.rsplit("/", 1)[-1] for f in gapp.scanner.list_images(sd)] == ["A.jpg", "b.jpg", "c.jpg"]
+assert [f.rsplit("/", 1)[-1] for f in gapp.scanner.list_images(sd, "newest")] == ["A.jpg", "c.jpg", "b.jpg"]
+assert [f.rsplit("/", 1)[-1] for f in gapp.scanner.list_images(sd, "oldest")] == ["b.jpg", "c.jpg", "A.jpg"]
+os.mkdir(sd + "/holiday"); os.mkdir(sd + "/.thumbs"); os.mkdir(sd + "/Cats")
+open(sd + "/holiday/h1.jpg", "w").close(); open(sd + "/holiday/h2.jpg", "w").close(); open(sd + "/Cats/c1.png", "w").close()
+os.mkdir(sd + "/holiday/beach"); open(sd + "/holiday/beach/b1.jpg", "w").close()
+assert [d.rsplit("/", 1)[-1] for d in gapp.scanner.list_dirs(sd)] == ["Cats", "holiday"]
+al = make([], folder=sd)
+assert al.entries[:4] == list(gapp.SPECIAL) and al.entries[4:6] == ["@dir:" + sd + "/Cats", "@dir:" + sd + "/holiday"]
+assert al._first == 6 and al.sel == 6 and [f.rsplit("/", 1)[-1] for f in al.files] == ["A.jpg", "b.jpg", "c.jpg"]
+al.sel = 4; press("confirm", app=al)               # open the Cats album
+assert al.folder == sd + "/Cats" and [f.rsplit("/", 1)[-1] for f in al.files] == ["c1.png"] and al.state == "browse"
+press("cancel", app=al)                            # back up, not out of the app
+assert al.folder == sd and al.entries[al.sel] == "@dir:" + sd + "/Cats" and not al.minimised
+al.sel = 5; press("confirm", app=al)               # the holiday album has a sub-album
+assert al.entries[4] == "@dir:" + sd + "/holiday/beach"
+al.sel = 4; press("confirm", app=al); assert al.folder.endswith("/beach")
+press("cancel", app=al); press("cancel", app=al)
+assert al.folder == sd and not al.minimised
+# a search ignores the albums; the slideshow and viewer skip them
+al.query = "c"; al._apply(); assert [e for e in al.entries if e.startswith("@dir")] == []
+al.query = ""; al._apply(); al.sel = 4
+al.state = "view"; al.sel = al._step(1); assert al.entries[al.sel].endswith("A.jpg")
+al.state = "browse"
+al.sel = 5; al._start_show(); assert al.entries[al.sel].endswith("A.jpg") and al.state == "show"
+press("cancel", app=al)
+# the album tile is drawn, in every layout
+for no, (name, fac) in enumerate(glay.LAYOUTS):
+    al.layout = fac(); ctx = RecCtx(); al.sel = 5; al.draw(ctx)
+al.layout = glay.LAYOUTS[0][1]()
+# sort from the settings screen re-reads the folder
+al.state = "settings"; al._row = 3
+press("right", app=al); assert al.sort == "newest" and al.files[0].endswith("A.jpg") and al.files[-1].endswith("b.jpg")
+press("left", app=al); assert al.sort == "name"
+al.state = "browse"
+print(tag, "sort and albums ok")
 
 # ---- 2026 only ----
 if MODE == "2026":
