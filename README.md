@@ -39,10 +39,11 @@ carousel, and CANCEL on the carousel sends the app to the background.
 **HDMI second screen.** With the HDMI hexpansion fitted and a badge firmware that
 has `display.Screen` (hazanjon's `feature/hdmi-mirror`), switch Settings > HDMI screen
 on. The picture you open in the viewer or slideshow then goes to the TV at 240 x 240
-(sent once per picture; the hexpansion holds it), and the badge's own screen shows the
-file name, position and slideshow timer. Leaving the app, or switching it off, hands
-the port back to the normal mirror. Without HDMI fitted you get a "No HDMI mirror
-found" toast and nothing else changes. 480 x 480 stills need a new frame type on
+(the same frame is sent again every 350 ms, because the hexpansion shows static after half a second of silence), and the badge's own screen shows the
+file name, position and slideshow timer. Leaving the viewer or slideshow, leaving the app, or switching it off, hands
+the port back to the normal mirror. Switching the option on starts the badge
+mirroring to the HDMI hexpansion by itself (it finds it by its EEPROM id), so the HDMI Manager
+app isn't needed. Without HDMI fitted you get a "No HDMI hexpansion found" toast and nothing else changes. 480 x 480 stills need a new frame type on
 the RP2350 side (see the plan in the hexpansion repo).
 
 | | Browse | Viewer | Slideshow |

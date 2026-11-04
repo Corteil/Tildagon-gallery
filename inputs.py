@@ -22,6 +22,7 @@ KEYS = ("UP", "DOWN", "LEFT", "RIGHT", "CONFIRM", "CANCEL")
 ARROWS = ("UP", "DOWN", "LEFT", "RIGHT")  # these repeat while held
 HOLD_MS = 400    # held this long before repeating starts
 REPEAT_MS = 70   # then one repeat per this many ms
+MAX_FRAME_MS = 100   # a frame counts for at most this long towards a hold, so a slow frame can't fake one
 # USB keyboard keys beyond arrows/Enter/Escape (those arrive as the six keys)
 KEYBOARD_EXTRA = (("SPACE", "NEXT"), ("BACKSPACE", "PREV"))
 LETTERS = "abcdefghijklmnopqrstuvwxyz"
@@ -110,6 +111,7 @@ class Inputs:
             b.pressed(t)
 
     def keys(self, delta=0):
+        delta = min(delta, MAX_FRAME_MS)
         names = []  # in the order pressed, each once, so frames behave the same every run
         for n in self._queue:
             if n not in names:

@@ -11,8 +11,11 @@ ctx, and that goes to the TV while the badge's screen shows something else.
     s.show(ctx)         # send the frame
     s.stop()            # give the port back to the mirror
 
-The hexpansion holds the last frame it was sent, so a still stays up with no
-further work.
+The hexpansion does NOT hold a still: its firmware (testcard/src/main.c,
+IDLE_AFTER_MS) shows "no signal" static when no row has arrived for 500 ms. So
+keepalive(delta) must be called every frame; it resends the same frame (just a
+retransmit of the screen's buffer, no drawing; get_ctx() and end_frame() are
+always called as a pair, as the firmware expects) every KEEPALIVE_MS.
 """
 try:
     import display
@@ -21,10 +24,25 @@ except ImportError:  # not on a badge
 
 SIZE = 240
 DRIVER = {"header": b"TDHD", "baudrate": 10_000_000}  # what the mirror uses too
+KEEPALIVE_MS = 350   # resend the frame this often; the hexpansion shows static after 500 ms of silence
+
+
+HDMI_VID, HDMI_PID = 0x1969, 0x4544   # what the HDMI hexpansion's EEPROM says it is
+
+
+def find_slot():
+    """The port the HDMI hexpansion is plugged into, from the badge's own list of hexpansions, or None."""
+    try:
+        from system.hexpansion.util import get_slots_by_vid_pid
+        slots = get_slots_by_vid_pid(HDMI_VID, HDMI_PID)
+        return slots[0] if slots else None
+    except Exception:
+        return None
 
 
 def find_port():
-    """The hexpansion port that is mirroring right now (the HDMI one), or None."""
+    """The port of the HDMI hexpansion: the one that is mirroring right now, else
+    the one the badge found by its EEPROM id, or None."""
     if display is None:
         return None
     for port in range(1, 7):
@@ -33,7 +51,14 @@ def find_port():
                 return port
         except Exception:
             pass
-    return None
+    return find_slot()
+
+
+def mirroring(port):
+    try:
+        return bool(display.is_mirror_active(port))
+    except Exception:
+        return False
 
 
 class SecondScreen:
@@ -41,10 +66,31 @@ class SecondScreen:
         self.port = None
         self.screen = None
         self.error = None
+        self._ctx = None       # the last frame sent
+        self._quiet = 0        # ms since a frame was last sent
 
     @property
     def active(self):
         return self.screen is not None
+
+    def switch_on(self):
+        """Start the badge mirroring to the HDMI hexpansion if it is not already,
+        like the HDMI Manager app does. True if the hexpansion is there and mirroring."""
+        if display is None or not hasattr(display, "attach_mirror"):
+            self.error = "Needs the HDMI firmware"
+            return False
+        port = find_port()
+        if port is None:
+            self.error = "No HDMI hexpansion found"
+            return False
+        if self.screen is None and not mirroring(port):
+            try:
+                display.attach_mirror(port=port, baudrate=DRIVER["baudrate"], driver=DRIVER)
+            except Exception as e:
+                self.error = "HDMI: " + type(e).__name__
+                print("gallery: mirror attach failed:", repr(e))
+                return False
+        return True
 
     def start(self):
         """True once the second screen is up. Otherwise self.error says why."""
@@ -55,10 +101,11 @@ class SecondScreen:
             return False
         port = find_port()
         if port is None:
-            self.error = "No HDMI mirror found"
+            self.error = "No HDMI hexpansion found"
             return False
         try:
-            display.detach_mirror(port)
+            if mirroring(port):
+                display.detach_mirror(port)
             self.screen = display.Screen(port=port, width=SIZE, height=SIZE,
                                          baudrate=DRIVER["baudrate"], driver=DRIVER)
             self.port = port
@@ -75,6 +122,27 @@ class SecondScreen:
 
     def show(self, ctx):
         self.screen.end_frame(ctx)
+        self._ctx = ctx
+        self._quiet = 0
+
+    def keepalive(self, delta):
+        """Call every frame with the ms since the last call. Sends the last frame
+        again once KEEPALIVE_MS has passed, so the hexpansion never shows static.
+        True if it sent."""
+        if self.screen is None or self._ctx is None:
+            return False
+        self._quiet += delta
+        if self._quiet < KEEPALIVE_MS:
+            return False
+        try:
+            # get_ctx() saves the drawing state and end_frame() restores it, so they go
+            # in pairs; the pixels already in the screen's buffer are sent as they are
+            self.screen.end_frame(self.screen.get_ctx())
+        except Exception as e:
+            print("gallery: HDMI keepalive failed:", repr(e))
+            return False
+        self._quiet = 0
+        return True
 
     def stop(self):
         """Give the port back to the mirror. Safe to call when not started."""
@@ -85,6 +153,7 @@ class SecondScreen:
         except Exception as e:
             print("gallery: second screen deinit failed:", repr(e))
         self.screen = None
+        self._ctx = None
         self._attach(self.port)
 
     @staticmethod

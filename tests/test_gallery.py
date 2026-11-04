@@ -171,8 +171,9 @@ assert a.state == "browse" and not a.minimised
 a.sel = O
 bus.emit(DownEvent({"right"})); a.update(20)
 assert a.sel == O + 1, a.sel               # the press itself
-a.update(200); assert a.sel == O + 1
-a.update(200); assert a.sel == O + 2       # 400 ms: repeat starts
+for _ in range(3):
+    a.update(100); assert a.sel == O + 1
+a.update(100); assert a.sel == O + 2       # 400 ms: repeat starts
 a.update(70); assert a.sel == O + 3
 a.update(70); assert a.sel == O + 4
 a.update(30); assert a.sel == O + 4
@@ -476,6 +477,7 @@ def real(n):
     for i in range(n):
         Image.new("RGB", (120, 90), (i * 40, 90, 160)).save(os.path.join(d, "p%02d.png" % i))
     return d
+ghdmi.KEEPALIVE_MS = 10 ** 9      # off for the first checks: they count exactly the frames the picture needs
 hv = make([], folder=real(5))
 hv.hdmi_on = True
 hv.sel = hv._first; press("confirm", app=hv); assert hv.state == "view"
@@ -491,6 +493,30 @@ press("right", app=hv)
 for _ in range(8):
     hv.draw(Ctx()); hv.update(50)
 assert scr.frames == 2
+# keep-alive: the hexpansion shows static after 500 ms of silence, so the same frame is sent again every 350 ms
+ghdmi.KEEPALIVE_MS = 350
+hv.hdmi._quiet = 0; f0 = scr.frames
+for _ in range(3):
+    hv.update(100)
+assert scr.frames == f0                      # 300 ms: not yet
+hv.update(100); assert scr.frames == f0 + 1  # 400 ms: sent again, nothing redrawn
+press("cancel", app=hv); assert hv.state == "browse"
+hv.update(20)
+assert not hv.hdmi.active and scr.closed and 3 in FakeDisplay.mirror     # out of the viewer: the mirror has the TV again
+f1 = scr.frames
+for _ in range(8):
+    hv.update(100)
+assert scr.frames == f1                      # and no frames are sent
+# a slow frame can't pass for a hold
+hk = make(["k%d.jpg" % i for i in range(5)]); hk.sel = 0
+bus.emit(DownEvent({"right"})); hk.update(20); assert hk.sel == 1
+hk.update(5000); hk.update(5000); assert hk.sel == 1, hk.sel   # one tap seen over two long frames: no repeat
+bus.emit(UpEvent({"right"}))
+ghdmi.KEEPALIVE_MS = 10 ** 9
+press("confirm", app=hv); assert hv.state == "view"   # back in the viewer: the second screen starts again
+for _ in range(6):
+    hv.draw(Ctx()); hv.update(50)
+assert hv.hdmi.active and FakeScreen.made[-1] is not scr
 press("cancel", app=hv); press("cancel", app=hv); press("cancel", app=hv)   # view, browse, home
 assert not hv.hdmi.active and scr.closed and 3 in FakeDisplay.mirror   # mirror restored
 # no HDMI fitted: say so once, don't keep trying
@@ -500,6 +526,17 @@ hn.sel = hn._first; press("confirm", app=hn)
 for _ in range(10):
     hn.draw(Ctx()); hn.update(50)
 assert not hn.hdmi.active and hn._hdmi_failed and not FakeDisplay.log
+# plugged in but not mirroring (no HDMI Manager run): switching the option on starts it by itself
+mod("system.hexpansion"); mod("system.hexpansion.util", get_slots_by_vid_pid=lambda v, p: [4] if (v, p) == (0x1969, 0x4544) else [])
+FakeDisplay.mirror = set(); FakeDisplay.log = []
+hs = make([], folder=real(2)); hs.state = "settings"; hs._row = hs.ROWS.index("HDMI screen")
+press("right", app=hs)
+assert hs.hdmi_on and ("attach", 4) in FakeDisplay.log and 4 in FakeDisplay.mirror, FakeDisplay.log
+press("right", app=hs); assert not hs.hdmi_on          # off again: nothing more is attached
+press("right", app=hs); assert hs.hdmi_on and FakeDisplay.log.count(("attach", 4)) == 1   # already mirroring: left alone
+hs2 = make([], folder=real(2)); assert hs2.hdmi_on     # remembered: starts mirroring when the app opens
+FakeDisplay.mirror = set(); FakeDisplay.log = []
+sys.modules.pop("system.hexpansion.util"); sys.modules.pop("system.hexpansion")
 ghdmi.display = real_display
 print(tag, "hdmi ok")
 

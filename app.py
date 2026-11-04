@@ -24,9 +24,19 @@ MAX_PIXELS = 240 * 240
 HOME = (("Pictures", (0.45, 0.3, 0.7)), ("Slideshow", (0.1, 0.6, 0.3)),
         ("Search", (0.2, 0.5, 0.9)), ("Settings", (0.55, 0.55, 0.65)))
 CHARS = "abcdefghijklmnopqrstuvwxyz0123456789 -_."   # on-badge search keyboard
+DEBUG = False   # print progress lines (with free memory) over USB; turn off when not hunting a crash
 STAGE_AHEAD = 3                      # slideshow pictures kept ready in PSRAM
 SORTS = (("name", "Name"), ("newest", "Newest first"), ("oldest", "Oldest first"))
 SECONDS = (2, 60)                    # slideshow timer range
+
+
+def dbg(*a):
+    if DEBUG:
+        try:
+            import gc
+            print("gallery:", *a, "| free", gc.mem_free())
+        except Exception:
+            print("gallery:", *a)
 
 
 def _special(e):
@@ -55,6 +65,8 @@ class GalleryApp(app.App):
             self.seconds = 5
         self.hdmi = hdmi.SecondScreen()
         self.hdmi_on = saved.get("hdmi") == "1"
+        if self.hdmi_on:
+            self.hdmi.switch_on()   # the TV mirrors the badge from the start, no HDMI Manager needed
         self._hdmi_path = None     # the picture the TV is showing
         self._hdmi_failed = False  # tried and couldn't: don't retry every frame
         self.shuffle = saved.get("shuffle") == "1"
@@ -172,6 +184,10 @@ class GalleryApp(app.App):
         for key in self.inputs.keys(delta):
             if self._key(key):
                 return
+        if self.hdmi.active and self.state not in ("view", "show"):
+            self.hdmi.stop()         # only the viewer and slideshow use the second screen: the mirror takes the TV back
+            self._hdmi_path = None
+        self.hdmi.keepalive(delta)   # the TV shows static if it is left alone for half a second
         # after the keys: a slow job flushes presses made while it ran, not this frame's
         self._background()
 
@@ -326,6 +342,8 @@ class GalleryApp(app.App):
                 self.hdmi_on = not self.hdmi_on
                 storage.save(hdmi=int(self.hdmi_on))
                 self._hdmi_failed = False
+                if self.hdmi_on and not self.hdmi.switch_on():
+                    self._toast(self.hdmi.error)
                 if not self.hdmi_on:
                     self.hdmi.stop()   # the mirror takes over again
                     self._hdmi_path = None
@@ -380,7 +398,9 @@ class GalleryApp(app.App):
             return
         if self.sel < self._first:   # an album is selected
             self.sel = self._first
+        dbg("slideshow: start, stage.start")
         stage.start()
+        dbg("slideshow: staged disk ready")
         self._order = list(range(self._first, len(self.entries)))
         if self.shuffle:   # the one on screen first, then the rest in a random order
             rest = [i for i in self._order if i != self.sel]
@@ -472,11 +492,13 @@ class GalleryApp(app.App):
         if not self.hdmi.active:
             if self._hdmi_failed:
                 return False
+            dbg("hdmi: starting second screen")
             if not self.hdmi.start():
                 self._hdmi_failed = True
                 self._toast(self.hdmi.error)
                 return False
         try:
+            dbg("hdmi: draw", path.rsplit("/", 1)[-1])
             c = self.hdmi.ctx()
             c.rgb(0, 0, 0).rectangle(-120, -120, 240, 240).fill()
             try:
@@ -489,7 +511,9 @@ class GalleryApp(app.App):
                 c.image(self._draw_path, *self._rect)
             if self.captions and self._caption:
                 self._text(c, self._caption[0][:20], 0, 100, 11, bg=True)
+            dbg("hdmi: sending frame")
             self.hdmi.show(c)
+            dbg("hdmi: frame sent")
             self._hdmi_path = path
         except Exception as e:
             print("gallery: HDMI draw failed", repr(e))
@@ -518,6 +542,7 @@ class GalleryApp(app.App):
                 if size and MAX_PIXELS and size[0] * size[1] > MAX_PIXELS and thumbs.available:
                     view = thumbs.shrunk(p) or p
                 self._views[p] = view
+                dbg("prepare", view.rsplit("/", 1)[-1])
                 stage.put(view)
                 self._prepared.add(p)
                 self.inputs.flush()
