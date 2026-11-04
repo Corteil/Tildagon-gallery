@@ -552,6 +552,7 @@ assert not hv.hdmi.active and scr.closed and 3 in FakeDisplay.mirror   # mirror 
 # slideshow with HDMI: the first pictures are prepared before the TV is taken over
 FakeDisplay.mirror = {3}; FakeDisplay.log = []
 n_screens = len(FakeScreen.made)
+gapp.PREPARE_FIRST = True
 hp = make([], folder=real(6)); hp.hdmi_on = True
 goto(hp, "Slideshow"); assert hp.state == "show" and not hp._show_ready
 for _ in range(2):
@@ -563,6 +564,15 @@ assert hp._show_ready and hp.hdmi.active and len(FakeScreen.made) == n_screens +
 assert len(hp._prepared) == gapp.STAGE_AHEAD + 1                                        # four ready by then
 press("cancel", app=hp); assert hp.state == "home"; hp.update(20)
 assert not hp.hdmi.active and 3 in FakeDisplay.mirror
+gapp.PREPARE_FIRST = False
+# by default the second screen starts as soon as the first picture is ready
+FakeDisplay.mirror = {3}
+hq = make([], folder=real(6)); hq.hdmi_on = True
+goto(hq, "Slideshow"); assert hq._show_ready
+for _ in range(6):
+    hq.draw(Ctx()); hq.update(20)
+assert hq.hdmi.active
+press("cancel", app=hq); hq.update(20); assert not hq.hdmi.active
 # no HDMI fitted: say so once, don't keep trying
 FakeDisplay.mirror = set(); FakeDisplay.log = []
 hn = make([], folder=real(5)); hn.hdmi_on = True

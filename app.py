@@ -25,6 +25,7 @@ HOME = (("Pictures", (0.45, 0.3, 0.7)), ("Slideshow", (0.1, 0.6, 0.3)),
         ("Search", (0.2, 0.5, 0.9)), ("Settings", (0.55, 0.55, 0.65)))
 CHARS = "abcdefghijklmnopqrstuvwxyz0123456789 -_."   # on-badge search keyboard
 DEBUG = False   # print progress lines (with free memory) over USB; turn off when not hunting a crash
+PREPARE_FIRST = False   # True: with HDMI on, prepare the first slideshow pictures before the TV is taken over
 COPY_MS = 80                         # longest slice of copying into the RAM disk in one frame
 STAGE_AHEAD = 3                      # slideshow pictures kept ready in PSRAM
 SORTS = (("name", "Name"), ("newest", "Newest first"), ("oldest", "Oldest first"))
@@ -456,7 +457,7 @@ class GalleryApp(app.App):
         self._since = 0
         self._paused = False
         self._shown = None
-        self._show_ready = not self.hdmi_on   # with HDMI on, the first pictures are prepared before the TV is taken over
+        self._show_ready = not (self.hdmi_on and PREPARE_FIRST)   # (see PREPARE_FIRST)
         self.state = "show"
 
     def _k_show(self, key):
