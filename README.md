@@ -5,7 +5,12 @@ Pictures come from the SD card; browse them as a mosaic of thumbnails, open one
 full screen, and step through with the badge buttons, the touch ring (2026), or
 a USB keyboard.
 
-**Status: early. The viewer, thumbnails and resizing run on a real badge (SD hexpansion). The newer parts (the HDMI second screen, the flash keep, slideshow staging and the honeycomb and focus-ring clipping) are only tested with stand-ins on a PC so far.** Please try it and tell me what breaks.
+**Status: early, but it runs on a real badge.** Tried on a 2024 Tildagon: the home carousel,
+the viewer, thumbnails and resizing, the honeycomb, the Settings screen, the slideshow, the
+flash copies, and the HDMI second screen (with the HDMI hexpansion; the slideshow can show a
+brief burst of static on the TV when it starts). Not tried on a badge yet: the 4x4 grid and
+focus ring, search, the 480 and 720 px copy sizes, and the 2026 badge's touch ring and joystick.
+Please try it and tell me what breaks.
 
 ## Using it
 
@@ -136,4 +141,6 @@ the `mpy` number: the prebuilt file is for 11014). Please send me the output.
 
 ## Planned
 
-A second display on the HDMI hexpansion (mirroring first), and trying all of this on real badges: the layouts, search, storage picker, flash copies and the slideshow have only been run against stand-ins so far.
+480 x 480 stills on the HDMI display (needs a new frame type in the hexpansion's firmware), and
+trying the remaining features on real badges: the 4x4 grid, focus ring, search, the larger copy
+sizes and the 2026 badge's extra inputs.
