@@ -125,6 +125,11 @@ class SecondScreen:
         self._ctx = ctx
         self._quiet = 0
 
+    def refresh(self):
+        """Send the last frame now: call it just before something slow, so the
+        silence the hexpansion sees starts from this moment."""
+        return self.keepalive(KEEPALIVE_MS)
+
     def keepalive(self, delta):
         """Call every frame with the ms since the last call. Sends the last frame
         again once KEEPALIVE_MS has passed, so the hexpansion never shows static.

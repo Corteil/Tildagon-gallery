@@ -8,11 +8,23 @@ and the slideshow reads straight from the card.
 """
 import os
 
+try:
+    from time import ticks_ms, ticks_diff
+except ImportError:       # not MicroPython (the PC tests)
+    import time as _time
+
+    def ticks_ms():
+        return int(_time.monotonic() * 1000)
+
+    def ticks_diff(a, b):
+        return a - b
+
 MOUNT = "/gallery_ram"
 BLOCKS = 1024          # x 512 bytes = 512 KB
 enabled = True
 _files = {}            # source path -> path in the RAM disk
 _mounted = False
+_cur = None            # a copy in progress: [src, dst, source file, destination file]
 
 
 class _RAM:
@@ -57,6 +69,7 @@ def start():
 
 def stop():
     global _mounted
+    cancel()
     _files.clear()
     if _mounted:
         try:
@@ -78,6 +91,69 @@ def disable():
 def lookup(src):
     """Path of the staged copy of src, or None."""
     return _files.get(src) if _mounted else None
+
+
+def copying():
+    """The source path being copied right now, or None."""
+    return _cur[0] if _cur else None
+
+
+def begin(src):
+    """Start copying src into the RAM disk in slices (see step). False if there is
+    nothing to do: it is already there, or can't be staged."""
+    global _cur
+    if not _mounted or src in _files or _cur:
+        return False
+    dst = "%s/%x.jpg" % (MOUNT, hash(src) & 0xFFFFFFF)
+    try:
+        _cur = [src, dst, open(src, "rb"), open(dst, "wb")]
+    except OSError:
+        _cur = None
+        return False
+    return True
+
+
+def step(budget_ms=80):
+    """Copy for up to budget_ms. True when this copy has finished (staged, or given up)."""
+    global _cur
+    if not _cur:
+        return True
+    src, dst, f, g = _cur
+    buf = bytearray(2048)
+    t0 = ticks_ms()
+    try:
+        while True:
+            n = f.readinto(buf)
+            if not n:
+                break
+            g.write(memoryview(buf)[:n])
+            if ticks_diff(ticks_ms(), t0) >= budget_ms:
+                return False          # more to do next frame
+    except OSError:  # disk full or card trouble: leave it unstaged
+        cancel()
+        return True
+    f.close()
+    g.close()
+    _files[src] = dst
+    _cur = None
+    return True
+
+
+def cancel():
+    """Give up the copy in progress."""
+    global _cur
+    if _cur:
+        src, dst, f, g = _cur
+        _cur = None
+        for h in (f, g):
+            try:
+                h.close()
+            except Exception:
+                pass
+        try:
+            os.remove(dst)
+        except OSError:
+            pass
 
 
 def put(src):

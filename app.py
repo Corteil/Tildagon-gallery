@@ -25,9 +25,26 @@ HOME = (("Pictures", (0.45, 0.3, 0.7)), ("Slideshow", (0.1, 0.6, 0.3)),
         ("Search", (0.2, 0.5, 0.9)), ("Settings", (0.55, 0.55, 0.65)))
 CHARS = "abcdefghijklmnopqrstuvwxyz0123456789 -_."   # on-badge search keyboard
 DEBUG = False   # print progress lines (with free memory) over USB; turn off when not hunting a crash
+COPY_MS = 80                         # longest slice of copying into the RAM disk in one frame
 STAGE_AHEAD = 3                      # slideshow pictures kept ready in PSRAM
 SORTS = (("name", "Name"), ("newest", "Newest first"), ("oldest", "Oldest first"))
 SECONDS = (2, 60)                    # slideshow timer range
+
+
+try:
+    from time import ticks_ms, ticks_diff
+except ImportError:       # not MicroPython (the PC tests)
+    import time as _time
+
+    def ticks_ms():
+        return int(_time.monotonic() * 1000)
+
+    def ticks_diff(a, b):
+        return a - b
+
+SLOW_MS = 300         # a frame slower than this is written to SLOW_LOG with what ran in it
+SLOW_LOG = storage.KEPT_ROOT + "/frames.txt"
+SLOW_MAX = 120        # lines kept, so it can't fill the flash
 
 
 def dbg(*a):
@@ -109,6 +126,13 @@ class GalleryApp(app.App):
         self._pick = 0         # letter on the on-badge search keyboard
         self._opts = []        # storage choices
         self._opt = 0
+        self._job = ""         # what the background step did this frame (for the slow-frame log)
+        self._lap = ""         # timings of the last HDMI picture
+        self._slow_n = 0
+        try:
+            open(SLOW_LOG, "w").close()     # a fresh slow-frame log for each run
+        except Exception:
+            pass
         self._since = 0        # slideshow clock, ms
         self._paused = False
         self._prepared = set() # slideshow pictures made ready
@@ -160,6 +184,17 @@ class GalleryApp(app.App):
                 return j
         return self.sel
 
+    def _slow(self, line):
+        """Append a line to the slow-frame log in flash (read it with mpremote afterwards)."""
+        if self._slow_n >= SLOW_MAX:
+            return
+        self._slow_n += 1
+        try:
+            with open(SLOW_LOG, "a") as f:
+                f.write(line + "\n")
+        except Exception:
+            pass
+
     def _toast(self, text, ms=1500):
         self._toast_text = text
         self._toast_ms = ms
@@ -189,7 +224,12 @@ class GalleryApp(app.App):
             self._hdmi_path = None
         self.hdmi.keepalive(delta)   # the TV shows static if it is left alone for half a second
         # after the keys: a slow job flushes presses made while it ran, not this frame's
+        self._job = ""
+        t0 = ticks_ms()
         self._background()
+        if delta > SLOW_MS or ticks_diff(ticks_ms(), t0) > SLOW_MS:
+            self._slow("frame %d ms, background %d ms: %s | %s | %s" % (
+                delta, ticks_diff(ticks_ms(), t0), self._job or "-", self.state, self._lap))
 
     def _key(self, key):
         """One key press. True if the app is leaving."""
@@ -453,11 +493,14 @@ class GalleryApp(app.App):
                 self._defer = False
                 return
             job, self._pending = self._pending, None
+            self._job = "pending job"
             job()
             return
         if self._hdmi_sync():
+            self._job = "hdmi picture"
             return
         if self.state == "show":
+            self._job = "prepare next"
             self._prepare_next()
             return
         if not thumbs.available or not self.files:
@@ -499,6 +542,8 @@ class GalleryApp(app.App):
                 return False
         try:
             dbg("hdmi: draw", path.rsplit("/", 1)[-1])
+            self.hdmi.refresh()      # the draw below is slow: start its silence from now
+            t0 = ticks_ms()
             c = self.hdmi.ctx()
             c.rgb(0, 0, 0).rectangle(-120, -120, 240, 240).fill()
             try:
@@ -511,9 +556,9 @@ class GalleryApp(app.App):
                 c.image(self._draw_path, *self._rect)
             if self.captions and self._caption:
                 self._text(c, self._caption[0][:20], 0, 100, 11, bg=True)
-            dbg("hdmi: sending frame")
+            t1 = ticks_ms()
             self.hdmi.show(c)
-            dbg("hdmi: frame sent")
+            self._lap = "%s: draw %d ms, send %d ms" % (path.rsplit("/", 1)[-1], ticks_diff(t1, t0), ticks_diff(ticks_ms(), t1))
             self._hdmi_path = path
         except Exception as e:
             print("gallery: HDMI draw failed", repr(e))
@@ -535,17 +580,27 @@ class GalleryApp(app.App):
             window.append(self.entries[j])
             j = self._show_step(j, 1)
         self._prepared &= set(window)  # the ones left behind are dropped from the RAM disk below
+        # A copy is done in slices of about COPY_MS a frame: one long copy would starve the
+        # HDMI keep-alive, and the hexpansion shows static after half a second of silence.
+        cur = stage.copying()
+        if cur and cur not in self._views.values():
+            stage.cancel()
+            cur = None
+        if cur:
+            if stage.step(COPY_MS):
+                self._prepared.add(next(p for p, v in self._views.items() if v == cur))
+            return
         for p in window:
             if p not in self._prepared:
                 view = p
                 size = imginfo.size(p)
                 if size and MAX_PIXELS and size[0] * size[1] > MAX_PIXELS and thumbs.available:
-                    view = thumbs.shrunk(p) or p
+                    view = thumbs.shrunk(p) or p      # (slow, but only the first time for each picture)
+                    self.inputs.flush()
                 self._views[p] = view
                 dbg("prepare", view.rsplit("/", 1)[-1])
-                stage.put(view)
-                self._prepared.add(p)
-                self.inputs.flush()
+                if not stage.begin(view) or stage.step(COPY_MS):
+                    self._prepared.add(p)
                 return
         stage.keep_only([self._views[p] for p in window if p in self._views])
 

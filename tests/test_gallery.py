@@ -347,6 +347,22 @@ bc = BadCtx(); sh.draw(bc)
 assert bc.imgs and bc.imgs[-1].startswith(show_dir) and not gstage.enabled
 press("cancel", app=sh); assert sh.state == "home" and not gstage._mounted
 gstage.enabled = True
+# staging copies in slices, so one long copy can't starve the HDMI keep-alive
+old_mount = gstage.MOUNT
+gstage.MOUNT = tempfile.mkdtemp(); gstage._mounted = True
+bigsrc = os.path.join(tempfile.mkdtemp(), "big.jpg"); open(bigsrc, "wb").write(bytes(range(256)) * 80)   # 20 KB
+assert gstage.begin(bigsrc) and gstage.copying() == bigsrc and gstage.lookup(bigsrc) is None
+slices = 1
+while not gstage.step(0):                      # a zero budget: one 2 KB chunk per call
+    slices += 1
+assert slices >= 10 and gstage.copying() is None
+assert open(gstage.lookup(bigsrc), "rb").read() == open(bigsrc, "rb").read()
+assert gstage.begin(bigsrc) is False           # already staged
+assert gstage.begin(bigsrc + ".missing") is False and gstage.copying() is None
+assert gstage.begin(bigsrc.replace("big", "big2")) is False     # (no such file)
+open(bigsrc.replace("big", "big2"), "wb").write(b"x" * 5000)
+assert gstage.begin(bigsrc.replace("big", "big2")); gstage.cancel(); assert gstage.copying() is None
+gstage._files.clear(); gstage._mounted = False; gstage.MOUNT = old_mount
 print(tag, "slideshow ok")
 
 # ---- empty storage: nothing to open, nothing breaks ----
@@ -492,7 +508,7 @@ assert scr.frames == 1                       # unchanged picture: not sent again
 press("right", app=hv)
 for _ in range(8):
     hv.draw(Ctx()); hv.update(50)
-assert scr.frames == 2
+assert scr.frames == 3                       # the new picture, plus the old one sent again just before its slow draw
 # keep-alive: the hexpansion shows static after 500 ms of silence, so the same frame is sent again every 350 ms
 ghdmi.KEEPALIVE_MS = 350
 hv.hdmi._quiet = 0; f0 = scr.frames
