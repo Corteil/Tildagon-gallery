@@ -509,13 +509,19 @@ press("right", app=hv)
 for _ in range(8):
     hv.draw(Ctx()); hv.update(50)
 assert scr.frames == 3                       # the new picture, plus the old one sent again just before its slow draw
-# keep-alive: the hexpansion shows static after 500 ms of silence, so the same frame is sent again every 350 ms
+# keep-alive: the hexpansion shows static after 500 ms of silence, so the same frame is sent again
+# unless the next frame would still come before 350 ms are up
 ghdmi.KEEPALIVE_MS = 350
 hv.hdmi._quiet = 0; f0 = scr.frames
-for _ in range(3):
-    hv.update(100)
-assert scr.frames == f0                      # 300 ms: not yet
-hv.update(100); assert scr.frames == f0 + 1  # 400 ms: sent again, nothing redrawn
+for _ in range(5):
+    hv.update(50)
+assert scr.frames == f0                      # 250 ms, and the next frame is due at 300: not yet
+hv.update(50); assert scr.frames == f0 + 1   # 300 ms, the next frame would be 350: sent again, nothing redrawn
+# slow frames (the real badge manages about 3 a second): one is sent every frame
+f2 = scr.frames
+for _ in range(4):
+    hv.update(340)
+assert scr.frames == f2 + 4
 press("cancel", app=hv); assert hv.state == "browse"
 hv.update(20)
 assert not hv.hdmi.active and scr.closed and 3 in FakeDisplay.mirror     # out of the viewer: the mirror has the TV again

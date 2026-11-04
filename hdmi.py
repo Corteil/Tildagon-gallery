@@ -24,7 +24,8 @@ except ImportError:  # not on a badge
 
 SIZE = 240
 DRIVER = {"header": b"TDHD", "baudrate": 10_000_000}  # what the mirror uses too
-KEEPALIVE_MS = 350   # resend the frame this often; the hexpansion shows static after 500 ms of silence
+KEEPALIVE_MS = 350   # resend the frame at least this often; the hexpansion shows static after 500 ms of silence
+REFRESH_AFTER_MS = 100   # refresh() does nothing if a frame went less than this long ago
 
 
 HDMI_VID, HDMI_PID = 0x1969, 0x4544   # what the HDMI hexpansion's EEPROM says it is
@@ -127,18 +128,24 @@ class SecondScreen:
 
     def refresh(self):
         """Send the last frame now: call it just before something slow, so the
-        silence the hexpansion sees starts from this moment."""
-        return self.keepalive(KEEPALIVE_MS)
+        silence the hexpansion sees starts from this moment. (Not if one went a moment ago.)"""
+        if self.screen is None or self._ctx is None or self._quiet < REFRESH_AFTER_MS:
+            return False
+        return self._send()
 
     def keepalive(self, delta):
         """Call every frame with the ms since the last call. Sends the last frame
-        again once KEEPALIVE_MS has passed, so the hexpansion never shows static.
-        True if it sent."""
+        again unless the next frame (guessed to take as long as this one) would still
+        arrive within KEEPALIVE_MS, so the hexpansion never shows static even when
+        frames are slow. True if it sent."""
         if self.screen is None or self._ctx is None:
             return False
         self._quiet += delta
-        if self._quiet < KEEPALIVE_MS:
+        if self._quiet + delta < KEEPALIVE_MS:
             return False
+        return self._send()
+
+    def _send(self):
         try:
             # get_ctx() saves the drawing state and end_frame() restores it, so they go
             # in pairs; the pixels already in the screen's buffer are sent as they are
