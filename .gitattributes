@@ -1,0 +1,15 @@
+# Keep the on-badge app-store tarball to just the app.
+README.md export-ignore
+HANDOFF.md export-ignore
+.github export-ignore
+.github/** export-ignore
+tests export-ignore
+tests/** export-ignore
+tools export-ignore
+tools/** export-ignore
+natmod export-ignore
+natmod/** export-ignore
+.gitignore export-ignore
+.gitattributes export-ignore
+# The app store writes its own metadata.json from tildagon.toml
+metadata.json export-ignore

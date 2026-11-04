@@ -1,0 +1,10 @@
+Gallery for the Tildagon badge
+Copyright (c) 2026 Brian Corteil. MIT License, see LICENSE.
+
+_imgtool.mpy is native code built from natmod/ and contains code from these
+libraries by Larry Bank (bitbank2), used under the Apache License 2.0
+(https://www.apache.org/licenses/LICENSE-2.0):
+
+  JPEGDEC  https://github.com/bitbank2/JPEGDEC
+  PNGdec   https://github.com/bitbank2/PNGdec
+  JPEGENC  https://github.com/bitbank2/JPEGENC

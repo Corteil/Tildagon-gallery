@@ -139,6 +139,12 @@ the `mpy` number: the prebuilt file is for 11014). Please send me the output.
 | `tools/badge.py`, `tools/selftest.py` | deploy to a badge and run the on-badge self-test |
 | `imgtool.py`, `_imgtool.mpy` | on-badge resizing (Python + prebuilt native code); source and tests in `natmod/` |
 
+## Credits
+
+`_imgtool.mpy` is built on [JPEGDEC](https://github.com/bitbank2/JPEGDEC),
+[PNGdec](https://github.com/bitbank2/PNGdec) and [JPEGENC](https://github.com/bitbank2/JPEGENC)
+by Larry Bank (bitbank2), Apache License 2.0; see `NOTICE`. The app itself is MIT (`LICENSE`).
+
 ## Planned
 
 480 x 480 stills on the HDMI display (needs a new frame type in the hexpansion's firmware), and
