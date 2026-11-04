@@ -416,6 +416,14 @@ press("down", app=st)                          # clear kept
 before = gkeep.count()
 press("confirm", app=st); assert gkeep.count() == 0 and st._toast_text == "Cleared"
 press("cancel", app=st); assert st.state == "home"
+# ---- a quick tap between two polls still counts (frames are slow with HDMI on) ----
+tp = make(["t%d.jpg" % i for i in range(3)])
+bus.emit(DownEvent({"right"})); bus.emit(UpEvent({"right"}))      # down and up before the app looks
+assert tp.inputs.keys(340) == ["RIGHT"], "a tap shorter than a frame was lost"
+assert tp.inputs.keys(340) == []                                  # and it counts once
+bus.emit(DownEvent({"cancel"})); bus.emit(UpEvent({"cancel"})); bus.emit(DownEvent({"cancel"})); bus.emit(UpEvent({"cancel"}))
+assert tp.inputs.keys(340) == ["CANCEL"]                          # two taps in one frame are one press
+
 # ---- a held key doesn't start another slow job when flush() is called after the last one ----
 lk = make(["k%d.jpg" % i for i in range(3)])
 bus.emit(DownEvent({"confirm"}))
@@ -541,6 +549,20 @@ for _ in range(6):
 assert hv.hdmi.active and FakeScreen.made[-1] is not scr
 press("cancel", app=hv); press("cancel", app=hv); press("cancel", app=hv)   # view, browse, home
 assert not hv.hdmi.active and scr.closed and 3 in FakeDisplay.mirror   # mirror restored
+# slideshow with HDMI: the first pictures are prepared before the TV is taken over
+FakeDisplay.mirror = {3}; FakeDisplay.log = []
+n_screens = len(FakeScreen.made)
+hp = make([], folder=real(6)); hp.hdmi_on = True
+goto(hp, "Slideshow"); assert hp.state == "show" and not hp._show_ready
+for _ in range(2):
+    hp.draw(Ctx()); hp.update(20)
+assert not hp.hdmi.active and len(FakeScreen.made) == n_screens and 3 in FakeDisplay.mirror   # the mirror still has the TV
+for _ in range(80):
+    hp.draw(Ctx()); hp.update(20)
+assert hp._show_ready and hp.hdmi.active and len(FakeScreen.made) == n_screens + 1
+assert len(hp._prepared) == gapp.STAGE_AHEAD + 1                                        # four ready by then
+press("cancel", app=hp); assert hp.state == "home"; hp.update(20)
+assert not hp.hdmi.active and 3 in FakeDisplay.mirror
 # no HDMI fitted: say so once, don't keep trying
 FakeDisplay.mirror = set(); FakeDisplay.log = []
 hn = make([], folder=real(5)); hn.hdmi_on = True
@@ -799,5 +821,5 @@ press("cancel"); assert a.state == "home" and not a.minimised
 press("cancel")
 assert a.minimised
 a.update(20)
-assert a.inputs._bound == (MODE == "2026")
+assert a.inputs._bound          # bound again after the minimise (every badge now: taps are queued from events)
 print(tag, "all checks passed")

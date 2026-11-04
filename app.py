@@ -138,6 +138,7 @@ class GalleryApp(app.App):
         self._since = 0        # slideshow clock, ms
         self._paused = False
         self._prepared = set() # slideshow pictures made ready
+        self._show_ready = True  # (with HDMI on) the first ones are ready, so the TV may be taken over
         self._views = {}       # picture -> the small file the slideshow draws
         self.query = ""
         self._open(storage.current(), root=storage.current())
@@ -455,6 +456,7 @@ class GalleryApp(app.App):
         self._since = 0
         self._paused = False
         self._shown = None
+        self._show_ready = not self.hdmi_on   # with HDMI on, the first pictures are prepared before the TV is taken over
         self.state = "show"
 
     def _k_show(self, key):
@@ -531,6 +533,8 @@ class GalleryApp(app.App):
         """Put the picture being viewed on the TV. True if that took this frame."""
         if not self.hdmi_on or self.state not in ("view", "show"):
             return False
+        if self.state == "show" and not self._show_ready and not self.hdmi.active:
+            return False        # still getting the first pictures ready: leave the TV on the mirror
         path = self.entries[self.sel]
         if self._shown != path or not self._rect or self._hdmi_path == path:
             return False        # not measured yet, can't be drawn, or already up
@@ -604,6 +608,9 @@ class GalleryApp(app.App):
                 if not stage.begin(view) or stage.step(COPY_MS):
                     self._prepared.add(p)
                 return
+        if not self._show_ready and all(p in self._prepared for p in window):
+            self._show_ready = True     # now the TV can be taken over, and the first picture gets its full time
+            self._since = 0
         stage.keep_only([self._views[p] for p in window if p in self._views])
 
     def _show_step(self, j, d):

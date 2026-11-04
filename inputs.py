@@ -22,6 +22,7 @@ KEYS = ("UP", "DOWN", "LEFT", "RIGHT", "CONFIRM", "CANCEL")
 ARROWS = ("UP", "DOWN", "LEFT", "RIGHT")  # these repeat while held
 HOLD_MS = 400    # held this long before repeating starts
 REPEAT_MS = 70   # then one repeat per this many ms
+QUEUE_MAX = 8        # presses kept between two frames
 MAX_FRAME_MS = 100   # a frame counts for at most this long towards a hold, so a slow frame can't fake one
 # USB keyboard keys beyond arrows/Enter/Escape (those arrive as the six keys)
 KEYBOARD_EXTRA = (("SPACE", "NEXT"), ("BACKSPACE", "PREV"))
@@ -67,9 +68,11 @@ class Inputs:
         self.bind()
 
     def bind(self):
-        # The six standard keys come from Buttons. Events are only needed
-        # for the 2026 joystick and touch ring.
-        if not self._bound and (JOYSTICK_BUTTON_TYPES or TOUCH):
+        # The six standard keys are read from Buttons each frame, and also queued from
+        # their ButtonDownEvents: a frame can be slower than a tap (HDMI sends block for
+        # 100 ms), and a tap that starts and ends between two polls would be missed.
+        # The 2026 joystick and touch ring need the events too.
+        if not self._bound:
             eventbus.on(ButtonDownEvent, self._down, self._owner)
             eventbus.on(ButtonUpEvent, self._up, self._owner)
             self._bound = True
@@ -82,6 +85,9 @@ class Inputs:
         self._touched.clear()
 
     def _down(self, event):
+        for name in KEYS:
+            if _has(BUTTON_TYPES[name], event.button) and len(self._queue) < QUEUE_MAX:
+                self._queue.append(name)
         for name in JOYSTICK_BUTTON_TYPES:
             if _has(JOYSTICK_BUTTON_TYPES[name], event.button):
                 self._queue.append("CONFIRM" if name == "SELECT" else name)
