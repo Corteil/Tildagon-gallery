@@ -42,7 +42,8 @@ except ImportError:       # not MicroPython (the PC tests)
     def ticks_diff(a, b):
         return a - b
 
-SLOW_MS = 300         # a frame slower than this is written to SLOW_LOG with what ran in it
+TRACE_SLOW = False    # True: write frames slower than SLOW_MS to SLOW_LOG in flash, with what ran in them
+SLOW_MS = 300
 SLOW_LOG = storage.KEPT_ROOT + "/frames.txt"
 SLOW_MAX = 120        # lines kept, so it can't fill the flash
 
@@ -129,10 +130,11 @@ class GalleryApp(app.App):
         self._job = ""         # what the background step did this frame (for the slow-frame log)
         self._lap = ""         # timings of the last HDMI picture
         self._slow_n = 0
-        try:
-            open(SLOW_LOG, "w").close()     # a fresh slow-frame log for each run
-        except Exception:
-            pass
+        if TRACE_SLOW:
+            try:
+                open(SLOW_LOG, "w").close()     # a fresh slow-frame log for each run
+            except Exception:
+                pass
         self._since = 0        # slideshow clock, ms
         self._paused = False
         self._prepared = set() # slideshow pictures made ready
@@ -227,7 +229,7 @@ class GalleryApp(app.App):
         self._job = ""
         t0 = ticks_ms()
         self._background()
-        if delta > SLOW_MS or ticks_diff(ticks_ms(), t0) > SLOW_MS:
+        if TRACE_SLOW and (delta > SLOW_MS or ticks_diff(ticks_ms(), t0) > SLOW_MS):
             self._slow("frame %d ms, background %d ms: %s | %s | %s" % (
                 delta, ticks_diff(ticks_ms(), t0), self._job or "-", self.state, self._lap))
 
